@@ -1,0 +1,4 @@
+.vscode
+/services/.venv
+/services/crawlers/.scrapy
+/api/target
