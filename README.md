@@ -1,2 +1,2 @@
 # E-commerce-watcher
-This is a small search engine for eCommerce website  
+This is an API for eCommerce website products information 
