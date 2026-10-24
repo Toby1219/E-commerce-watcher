@@ -14,6 +14,7 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         db.execute_unprepared("CREATE EXTENSION IF NOT EXISTS vector").await?;
         db.execute_unprepared("ALTER TABLE products ADD COLUMN IF NOT EXISTS embedding vector(768)").await?;
+        db.execute_unprepared("ALTER TABLE products ALTER COLUMN embedding TYPE vector(768) USING embedding::vector(768)").await?;
         Ok(())
     }
 

@@ -1,6 +1,12 @@
+import os
 import scrapy
 from decimal import Decimal
+from dotenv import load_dotenv
 from email.utils import parsedate_to_datetime
+
+load_dotenv()
+
+CURENCY_API_URL = os.getenv("CURENCY_API_URL")
 
 class CurencyApiSpider(scrapy.Spider):
     name = "curency_api"
@@ -12,7 +18,7 @@ class CurencyApiSpider(scrapy.Spider):
     }
     
     async def start(self):
-        url = "https://v6.exchangerate-api.com/v6/d413960e4a51d7258f6c4d81/latest/USD"
+        url = CURENCY_API_URL
         yield scrapy.Request(url=url, callback=self.parse)
     
     async def parse(self, response):

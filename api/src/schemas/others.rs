@@ -9,12 +9,10 @@ use jsonwebtoken::TokenData;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi, IntoResponses, ToSchema};
 
- 
-
 use crate::middleware::redis_cache::CacheReqResp;
 use crate::schemas::request_sch::SortValues;
 use crate::schemas::response_sch::ApiError;
-use crate::utils::jwt::verify_jwt;
+use crate::utils::{jwt::verify_jwt, utils_funcs::bearer_or_cookie_token};
 
 
 pub struct AppState{
@@ -31,7 +29,8 @@ pub struct AppEnvConfig{
     pub port: u32,
     pub bind_address: String,
     pub cors_origin: String,
-    pub rust_log_level: String
+    pub rust_log_level: String,
+    pub py_api_host: String
 }
 
 impl AppEnvConfig {
@@ -44,6 +43,7 @@ impl AppEnvConfig {
             bind_address: var("BIND_ADDRESS").expect("Invalid bind address ..."),
             cors_origin: var("CORS_ORIGIN").expect("Invalid CORS origin ..."),
             rust_log_level: var("RUST_LOG").unwrap_or("info".to_string()),
+            py_api_host: var("PY_API_HOST").expect("Py API host is not set yet")
         })
     }
 }
@@ -71,22 +71,11 @@ impl FromRequest for OptionalUser{
                 .app_data::<web::Data<AppState>>()
                 .cloned()
                 .ok_or_else(|| ApiError::NotFound("App State was not configured".to_string()))?;
-
-            let token_header = req.cookie("access_token")
-                .map(|c| c.value().to_string())
-                .or_else(|| {
-                    req
-                        .headers()
-                        .get("Authorization")
-                        .and_then(|h| h.to_str().ok())
-                        .and_then(|h| h.strip_prefix("Bearer "))
-                        .map(|s| s.to_string())
-                });
             
-            
+            let token_header = bearer_or_cookie_token(req).await;
             let token = match token_header {
-                Some(t) => t.to_string(),
-                None => return Ok(OptionalUser(None))
+                Ok(t) => t,
+                Err(_) => return Ok(OptionalUser(None))
                 
             };
             
@@ -201,7 +190,6 @@ pub enum EmbeddingResponseData {
     Multiple(Vec<Vec<f32>>),
 }
 
-
 #[derive(Serialize, Debug)]
 pub struct RequestBody {
     pub text: TextPayload
@@ -210,4 +198,9 @@ pub struct RequestBody {
 #[derive(Deserialize, Debug)]
 pub struct EmbedderApiResponse {
     pub data: EmbeddingResponseData,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StatusApiResponse {
+    pub status: String,
 }

@@ -9,7 +9,7 @@ pub struct Model{
     pub phrase: String,
     pub user_id: Option<i64>,
     
-    #[sea_orm(unique, indexed)]
+    #[sea_orm(indexed)]
     pub anon_user: Option<String>,
     
     pub created_at: DateTime<Utc>

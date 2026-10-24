@@ -10,7 +10,9 @@ pub struct Model{
     pub id: i64,
     pub product_url: String,
     pub product_name: String,
-    pub product_price: String,
+    pub product_price: Decimal,
+    pub product_price_text: String,
+    pub product_currency: String,
     pub product_brand_name: Option<String>,
     pub product_category: Option<String>,
     pub product_image:Option<String>,
@@ -23,7 +25,7 @@ pub struct Model{
     pub product_specifications: Value,
     pub score: i64,
     pub created_at: DateTime<Utc>,
-    pub embedding: PgVector,
+    pub embedding: Option<PgVector>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

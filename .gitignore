@@ -1,4 +1,8 @@
 .vscode
 /services/.venv
 /services/crawlers/.scrapy
+/services/crawlers/.env
+
+/api/migration/target
 /api/target
+/api/.env

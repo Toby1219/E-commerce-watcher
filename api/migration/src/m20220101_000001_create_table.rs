@@ -1,5 +1,5 @@
 use sea_orm_migration::{prelude::*, sea_orm::{DatabaseBackend, Schema}};
-use entities::{users, products, history, bookmark, tokens};
+use entities::{users, products, history, bookmark, tokens, currencies};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -18,6 +18,8 @@ impl MigrationTrait for Migration {
         .await?;
         manager.create_table(schema.create_table_from_entity(tokens::Entity))
         .await?;
+        manager.create_table(schema.create_table_from_entity(currencies::Entity))
+        .await?;
         Ok(())
     }
 
@@ -31,6 +33,8 @@ impl MigrationTrait for Migration {
         manager.drop_table(Table::drop().table(bookmark::Entity).to_owned())
         .await?;
         manager.drop_table(Table::drop().table(tokens::Entity).to_owned())
+        .await?;
+        manager.drop_table(Table::drop().table(currencies::Entity).to_owned())
         .await?;
         Ok(())
     }

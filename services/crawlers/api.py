@@ -4,16 +4,19 @@ import logging
 import sys
 import time
 from pathlib import Path
+from dotenv import load_dotenv
 
+load_dotenv()
 os.environ["HF_TOKEN"] = "hf_xxxxxxxxxxxxxxxx"
 os.environ["HF_HUB_OFFLINE"] = "1"
+
 
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sentence_transformers import SentenceTransformer
 from pydantic import BaseModel
 
-ORIGINS = ["http://localhost:8080", "http://127.0.0.1:8080"]
+ORIGINS = os.getenv("ORIGINS")
 
 app = FastAPI()
 log = logging.getLogger("uvicorn.error")
@@ -67,6 +70,30 @@ async def run_scraper(query: str):
     finally:
         in_flight.discard(query)
 
+
+async def run_currency_scraper():
+    try:
+        async with scrape_slots:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "scrapy crawl curency_api",
+                cwd=SCRAPER_DIR
+            )
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=3000)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                log.warning("scraped time out for currencies")
+            else:
+                if proc.returncode != 0:
+                    log.warning("Scraped failed for currency (exit %s)", proc.returncode)
+    finally:
+        log.info("Finished runing the currency spider")
+
+
+
+
 @app.post("/text-embedder")
 async def embedded_text(payload: PayloadQuery):
     text_arr = await embed_text(payload.text)       
@@ -74,6 +101,8 @@ async def embedded_text(payload: PayloadQuery):
 
 @app.post("/run-scrapy")
 async def run_scrapy(payload: PayloadQuery, background: BackgroundTasks):
+    if isinstance(payload, list[str]):
+        return {"status": "Invalid request payload"}
     query = payload.text.strip().lower()
 
     if time.monotonic() - last_run.get(query, -COOLDOWN) < COOLDOWN:
@@ -86,7 +115,14 @@ async def run_scrapy(payload: PayloadQuery, background: BackgroundTasks):
     last_run[query] = time.monotonic()
 
     background.add_task(run_scraper, query)
-    return {"status": "Started to Run Scrapy crawler in background"}
+    return {"status": "Started to Run Scrapy crawler in background for products"}
 
 
+@app.get("/update-currency")
+async def run_update_currency(background: BackgroundTasks):
+    if time.monotonic() < COOLDOWN:
+        return {"status": "recently scraped currency"}
+    background.add_task(run_currency_scraper)
+    return {"status": "Started to Run Scrapy crawler in background for currency"}
+    
 

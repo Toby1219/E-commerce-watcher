@@ -8,18 +8,18 @@ use utoipa_actix_web::{scope::scope, service_config::ServiceConfig};
 
 use entities::users::{self, Entity as User};
 use entities::tokens::{self, Entity as Tokens};
+use validator::Validate;
 
 use crate::middleware::authentication::check_auth_middleware;
 use crate::schemas::response_sch::{ApiError, ApiResponse, UserSchema, RefreshResponse};
 use crate::schemas::request_sch::{CreateUser, LoginUser, RefreshTokenRequest, UpdateUser};
-use crate::schemas::others::{AppState, Claims, CommonErrors};
+use crate::schemas::others::{AppState, AuthenticatedUser, Claims, CommonErrors};
 use crate::utils::constants::{set_cookies, DefaultGovernorConfig};
 use crate::utils::jwt::{hash_refresh_token};
 use crate::utils::pwdhash::{hash_paswrd, verify_hashpaswrd};
-use crate::utils::utils_funcs::{get_stored_token, revoke_rotate_token, extract_refresh_token, generate_set_tokens};
+use crate::utils::utils_funcs::{get_stored_token, revoke_rotate_token, extract_refresh_token, generate_set_tokens, bearer_or_cookie_token};
 
 #[utoipa::path(
-    params(CreateUser),
     responses(
         (status=200, description="Register User", body=ApiResponse<UserSchema>),
         CommonErrors
@@ -34,39 +34,46 @@ async fn register_user(
 
     let payload = payload.into_inner();
     let pwrd = payload.password_text.to_string();
+    
+    match payload.validate() {
+        Ok(_) => {
+            let new_user = users::ActiveModel {
+                email: Set(payload.email.to_string()),
+                username: Set(payload.username.to_string()),
+                password_hash: Set(hash_paswrd(pwrd)),
+                created_at: Set(Utc::now()),
+                joined: Set(Utc::now()),
+                orders_count: Set(Some(0)),
+                ..Default::default()
+            };
+            let db = state.db.clone();
+            let model = new_user.insert(&db).await?;
 
-    let new_user = users::ActiveModel {
-        email: Set(payload.email.to_string()),
-        username: Set(payload.username.to_string()),
-        password_hash: Set(hash_paswrd(pwrd)),
-        created_at: Set(Utc::now()),
-        joined: Set(Utc::now()),
-        orders_count: Set(Some(0)),
-        ..Default::default()
-    };
-    let db = state.db.clone();
-    let model = new_user.insert(&db).await?;
+            let response = UserSchema {
+                id: model.id,
+                username: model.username.clone(),
+                email: model.email,
+                orders_count:model.orders_count.unwrap_or(0),
+                date_joined:model.joined,
+                token: None,
+                refresh_token: None
+            };
 
-    let response = UserSchema {
-        id: model.id,
-        username: model.username.clone(),
-        email: model.email,
-        orders_count:model.orders_count.unwrap_or(0),
-        date_joined:model.joined,
-        token: None,
-        refresh_token: None
-    };
+            Ok(ApiResponse::new(
+                201, 
+                format!("Created user {}", &model.username), 
+                response
+            ))
+        }
+        Err(err) => {
+            Err(ApiError::ValidationError(format!("{}", err)))
+        }
+    }
 
-    Ok(ApiResponse::new(
-        201, 
-        format!("Created user {}", &model.username), 
-        response
-    ))
 }
 
 
 #[utoipa::path(
-    params(LoginUser),
     responses(
         (status=200, description="Log-In User", body=ApiResponse<UserSchema>),
         CommonErrors
@@ -117,7 +124,6 @@ async fn login_user(
 
 
 #[utoipa::path(
-    params(RefreshTokenRequest),
     responses(
         (status=200, description="Refresh User API Token", body=ApiResponse<UserSchema>),
         CommonErrors
@@ -155,7 +161,7 @@ async fn refresh_token(
     };
     
     //revoke and rotate token
-    let (new_acess_token, new_raw_refresh) = revoke_rotate_token(&db, stored, &user, &state).await?;
+    let (new_acess_token, new_raw_refresh) = revoke_rotate_token(stored, &user, &state).await?;
     
     let set_cookies = set_cookies(new_acess_token.to_string(), new_raw_refresh.to_string());
 
@@ -184,40 +190,29 @@ async fn refresh_token(
 async fn logout_user(
     state:web::Data<AppState>,
     request:HttpRequest,
+    user: AuthenticatedUser
 )->Result<HttpResponse, ApiError>{
-    let user_email = request.extensions_mut().get::<TokenData<Claims>>()
-        .map(|u| u.claims.email.clone())
-        .unwrap_or_else(|| return ApiError::Unauthorized.to_string());
-
-    let user = match User::find()
-        .filter(users::Column::Email.eq(&user_email))
-        .one(&state.db)
-        .await?
-        {
-            Some(u) => u,
-            None => return Err(ApiError::NotFound(format!("User Email: {} does not exsit", user_email)))
-        };
-    
+    let token = bearer_or_cookie_token(request).await?;
     let token = match Tokens::find()
-        .filter(tokens::Column::UserId.eq(&user.id))
+        .filter(tokens::Column::Token.eq(token))
         .one(&state.db)
         .await?
         {
             Some(t) => t,
-            None => return Err(ApiError::NotFound(format!("Token for user {} not found", user.username)))
+            None => return Err(ApiError::Unauthorized)
         };
+
     token.delete(&state.db).await?;
 
     Ok(ApiResponse::new(
         200, 
-        format!("User {} logout sucessfully", user.username), 
+        format!("User {} logout sucessfully", user.email), 
         ()
     ))
 }
 
 
 #[utoipa::path(
-    params(UpdateUser),
     responses(
         (status=200, description="Update User Information", body=ApiResponse<UserSchema>),
         CommonErrors
@@ -227,50 +222,61 @@ async fn logout_user(
 #[post("/update")]
 async fn update_user(state:web::Data<AppState>, request:HttpRequest, payload:web::Json<UpdateUser>)->Result<HttpResponse, ApiError>{
     let payload = payload.into_inner();
-    let p_email = payload.email.clone().expect("No email set");
-    let p_name = payload.username.clone().expect("No username set");
-    let mut count = 0;
-    let user_email = request.extensions_mut().get::<TokenData<Claims>>()
-        .map(|token_data| token_data.claims.email.clone())
-        .ok_or(ApiError::Unauthorized)?;
 
-    let user = User::find()
-        .filter(users::Column::Email.eq(user_email))
-        .one(&state.db)
-        .await
-        .map_err(|e| ApiError::DatabaseError(e))?
-        .ok_or_else(|| ApiError::NotFound("User not found ...".to_string()))?;
-    
+    match payload.validate() {
+        Ok(_) => {
+            let p_email = payload.email.clone()
+                .ok_or_else(|| ApiError::ValidationError("Email field is required".to_string()))?;
+            let p_name = payload.username.clone()
+                .ok_or_else(|| ApiError::ValidationError("Username field is required".to_string()))?;
+            let mut count = 0;
+            let user_email = request.extensions_mut().get::<TokenData<Claims>>()
+                .map(|token_data| token_data.claims.email.clone())
+                .ok_or(ApiError::Unauthorized)?;
 
-    let mut mod_user:users::ActiveModel = user.clone().into();
-    if user.email != p_email{ 
-        mod_user.email = Set(p_email.clone());
-        count += 1;
-    };
-    if user.username != p_name{
-        mod_user.username = Set(p_name);
-        count += 1;
-    };
-    if count > 0 {
-        let rows = mod_user.update(&state.db).await?;
-        // let (raw_refresh, token, _) = generate_set_tokens(&state, &rows, user.id).await?;
-        let user_resp = UserSchema{
-            id:rows.id,
-            username: rows.username.clone(),
-            email: rows.email.clone(),
-            orders_count:rows.orders_count.unwrap_or(0),
-            date_joined:rows.joined,
-            token: None,
-            refresh_token: None
-        };
-        Ok(ApiResponse::new(
-            200, 
-            format!("Updated user {:?} information", user.username), 
-            user_resp
-        ))
-    }else{
-        Ok(ApiResponse::new(200, "No update to user information was made", ()))
+            let user = User::find()
+                .filter(users::Column::Email.eq(user_email))
+                .one(&state.db)
+                .await
+                .map_err(|e| ApiError::DatabaseError(e))?
+                .ok_or_else(|| ApiError::NotFound("User not found ...".to_string()))?;
+            
+
+            let mut mod_user:users::ActiveModel = user.clone().into();
+            if user.email != p_email{ 
+                mod_user.email = Set(p_email.clone());
+                count += 1;
+            };
+            if user.username != p_name{
+                mod_user.username = Set(p_name);
+                count += 1;
+            };
+            if count > 0 {
+                let rows = mod_user.update(&state.db).await?;
+                // let (raw_refresh, token, _) = generate_set_tokens(&state, &rows, user.id).await?;
+                let user_resp = UserSchema{
+                    id:rows.id,
+                    username: rows.username.clone(),
+                    email: rows.email.clone(),
+                    orders_count:rows.orders_count.unwrap_or(0),
+                    date_joined:rows.joined,
+                    token: None,
+                    refresh_token: None
+                };
+                Ok(ApiResponse::new(
+                    200, 
+                    format!("Updated user {:?} information", user.username), 
+                    user_resp
+                ))
+            }else{
+                Ok(ApiResponse::new(200, "No update to user information was made", ()))
+            }
+        },
+        Err(err) => {
+            Err(ApiError::ValidationError(format!("{}", err)))
+        }
     }
+    
 }
 
 pub fn config_auth_routes(cfg: &mut ServiceConfig, rate_limter: DefaultGovernorConfig) {

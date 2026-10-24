@@ -43,6 +43,8 @@ class TortoiseDBPipeline:
             defaults={
                 "product_name": prod_name,
                 "product_price": adapter.get("product_price"),
+                "product_price_text": adapter.get("product_price_text"),
+                "product_currency": adapter.get("product_currency"),
                 "product_brand_name": adapter.get("product_brand"),
                 "product_category": adapter.get("product_category"),
                 "product_image": adapter.get("product_image"),

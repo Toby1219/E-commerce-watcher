@@ -3,7 +3,7 @@ use sea_orm::{ConnectionTrait, DbBackend, FromQueryResult, Statement};
 use sea_orm::prelude::PgVector;
 
 use crate::schemas::response_sch::ApiError;
-use crate::schemas::others::{AppState, EmbeddingResponseData};
+use crate::schemas::others::{AppState, EmbedderApiResponse, EmbeddingResponseData};
 use crate::schemas::others::TextPayload;
 use crate::utils::utils_funcs::make_request;
 
@@ -11,8 +11,13 @@ use crate::utils::utils_funcs::make_request;
 struct Pending { id: i64, product_name: String }
 
 
-pub async fn embed_one(text: String) -> Result<Vec<f32>, ApiError> {
-    let response = make_request(TextPayload::Single(text), "text-embedder".to_string()).await?;
+pub async fn embed_one(text: String, host:String) -> Result<Vec<f32>, ApiError> {
+    let response:EmbedderApiResponse = make_request(
+        Some(TextPayload::Single(text)), 
+        "text-embedder".to_string(), 
+        host, 
+        "post".to_string()
+    ).await?;
     match response.data {
         EmbeddingResponseData::Single(v) => Ok(v),
         EmbeddingResponseData::Multiple(_) => Err(ApiError::NotFound(
@@ -21,9 +26,14 @@ pub async fn embed_one(text: String) -> Result<Vec<f32>, ApiError> {
     }
 }
 
-pub async fn embed_many(texts: Vec<String>) -> Result<Vec<Vec<f32>>, ApiError> {
+pub async fn embed_many(texts: Vec<String>, host:String) -> Result<Vec<Vec<f32>>, ApiError> {
     let expected_len = texts.len();
-    let response = make_request(TextPayload::Multiple(texts), "text-embedder".to_string()).await?;
+    let response:EmbedderApiResponse = make_request(
+        Some(TextPayload::Multiple(texts)),
+        "text-embedder".to_string(), 
+        host, 
+        "post".to_string()
+    ).await?;
     match response.data {
         EmbeddingResponseData::Multiple(v) if v.len() == expected_len => Ok(v),
         EmbeddingResponseData::Multiple(_) => Err(ApiError::NotFound(
@@ -55,7 +65,7 @@ pub async fn backfill_product_embeddings(state: web::Data<AppState>) -> Result<u
         }
 
         let names: Vec<String> = batch.iter().map(|p| p.product_name.clone()).collect();
-        let vectors = embed_many(names).await?;
+        let vectors = embed_many(names, state.env_config.py_api_host.clone()).await?;
         
         for (p, v) in batch.iter().zip(vectors) {
             state.db

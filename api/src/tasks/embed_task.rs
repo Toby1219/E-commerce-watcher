@@ -10,7 +10,6 @@ pub fn spawn_embedding_backfill(state: web::Data<AppState>) {
         let idle = Duration::from_secs(30);
         let retry = Duration::from_secs(60);
         loop {
-            // interval.tick().await;
             let wait = match backfill_product_embeddings(state.clone()).await {
                 Ok(n) => {
                     if n > 0 { log::info!("backfill done: {} products", n) }

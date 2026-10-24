@@ -1,12 +1,11 @@
 use std::str::FromStr;
 use actix_web::middleware::from_fn;
-use actix_web::{HttpMessage, HttpRequest, HttpResponse, get, post, web};
+use actix_web::{HttpRequest, HttpResponse, get, post, web};
 use sea_orm::{Statement, DbBackend, prelude::PgVector};
 use sea_orm::{ActiveModelTrait, ColumnTrait, Condition, EntityTrait, FromQueryResult, ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, Set};
 use serde_json::{json, Value};
 use actix_governor::{Governor};
 use chrono::{Utc};
-use jsonwebtoken::TokenData;
 use utoipa_actix_web::{scope::scope, service_config::ServiceConfig};
 
 use crate::middleware::authentication::check_auth_middleware;
@@ -17,9 +16,7 @@ use crate::schemas::response_sch::{
     BookmarkSchema
 };
 use crate::schemas::others::{
-    AppState, AuthenticatedUser, Claims, 
-    OptionalUser, Identity, CommonErrors,
-    TextPayload,
+    AppState, AuthenticatedUser, CommonErrors, EmbedderApiResponse, Identity, OptionalUser, TextPayload,
 };
 use crate::schemas::request_sch::{
     BHOQuery, Converstions, CurrencyQuery, 
@@ -48,30 +45,60 @@ use entities::currencies::{self, Entity as Currency};
     tag="Tools"
 )]
 #[get("/health")]
-async fn health_check(state:web::Data<AppState>, request:HttpRequest)-> Result<HttpResponse, ApiError>{
-    let id_ = extract_user_ip(&request).await;
-    let key = CacheReqResp::key_for("health", &id_);
-    if let Some(cached_data) = state.redis.get::<Value>(&key).await {
-        return Ok(ApiResponse::new(
-            200, 
-            "Checking API health (From Cached Data)".to_string(),
-            cached_data
-        ));
+async fn health_check(state:web::Data<AppState>, request:HttpRequest, user_auth:OptionalUser)-> Result<HttpResponse, ApiError>{
+    let (identity, new_cookie) = get_user_identity(user_auth, &request).await;
+
+    match identity{
+        Identity::User(u) => {
+            let id_ = extract_user_ip(&request).await;
+            let key = CacheReqResp::key_for(format!("health <-> {}", u.email).as_str(), &id_);
+            if let Some(cached_data) = state.redis.get::<Value>(&key).await {
+                return Ok(ApiResponse::new(
+                    200, 
+                    "Checking API health (From Cached Data)".to_string(),
+                    cached_data
+                ));
+            }
+
+            let body = json!({"message": "API says am good to go ...", "current user":&u.email});
+
+            state.redis.set(&key, &body, 60).await.ok();
+
+            Ok(ApiResponse::new(
+                200, 
+                "Checking API health".to_string(), 
+                body
+            ))
+        }
+        Identity::AnonUser(a_u) => {
+            let id_ = extract_user_ip(&request).await;
+            let key = CacheReqResp::key_for(format!("health <-> {}", a_u).as_str(), &id_);
+            if let Some(cached_data) = state.redis.get::<Value>(&key).await {
+                return Ok(ApiResponse::new(
+                    200, 
+                    "Checking API health (From Cached Data)".to_string(),
+                    cached_data
+                ));
+            }
+
+            let body = json!({"message": "API says am good to go ...", "Anonymous":a_u});
+
+            state.redis.set(&key, &body, 60).await.ok();
+            let mut response = ApiResponse::new(
+                200, 
+                "Checking API health".to_string(), 
+                body
+            );
+            if let Some(c) = new_cookie {
+                let _ = response.add_cookie(&c);
+            };
+            Ok(response)
+        }
     }
+
+
     
-    let current_user = request.extensions_mut().get::<TokenData<Claims>>()
-        .map(|token_data| token_data.claims.email.clone())
-        .unwrap_or_else(|| "anonymous user".to_string());
 
-    let body = json!({"message": "API says am good to go ...", "current_user":current_user});
-
-    state.redis.set(&key, &body, 60).await.ok();
-
-    Ok(ApiResponse::new(
-        200, 
-        "Checking API health".to_string(), 
-        body
-    ))
 }
 
 #[utoipa::path(
@@ -146,7 +173,7 @@ async fn multiple_product(state:web::Data<AppState>, query:web::Query<ProductQue
         .filter(products::Column::ProductName.ilike(format!("%{escaped}%")))
         .order_by_asc(sort_type);
 
-    let cached_key = CacheReqResp::key_for(format!("{} <-> {} <-> {}", prod_name, page, per_page).as_ref(), &id_);
+    let cached_key = CacheReqResp::key_for(format!("{} <-> {} <-> {} <-> {:?}", prod_name, page, per_page, sort_type).as_ref(), &id_);
     if let Some(cached_data) = state.redis.get::<ProductResponse>(&cached_key).await {
         return Ok(ApiResponse::new(200, format!("Products from cached data"), cached_data));
     }
@@ -161,7 +188,7 @@ async fn multiple_product(state:web::Data<AppState>, query:web::Query<ProductQue
 
     if total_items == 0 {
         let q = TextPayload::Single(p_n.clone());
-        actix_web::rt::spawn(make_request(q, "run-scrapy".to_string()));
+        actix_web::rt::spawn(make_request::<EmbedderApiResponse>(Some(q), "run-scrapy".to_string(), state.env_config.py_api_host.clone(), "post".to_string()));
     }
 
     let products_result: ProductResponse = ProductResponse {
@@ -179,6 +206,8 @@ async fn multiple_product(state:web::Data<AppState>, query:web::Query<ProductQue
             product_details: v.product_details,
             product_image: v.product_image,
             product_price: v.product_price,
+            product_price_text: v.product_price_text,
+            product_currency: v.product_currency,
             product_reviews: v.product_reviews,
             product_specifications: v.product_specifications,
             created_at: v.created_at,
@@ -236,6 +265,8 @@ async fn single_product(state:web::Data<AppState>, query:web::Query<ProductIdQue
         product_brand_name: product.product_brand_name,
         product_image: product.product_image,
         product_price: product.product_price,
+        product_price_text: product.product_price_text,
+        product_currency: product.product_currency,
         product_sku: product.product_sku,
         product_category: product.product_category,
         product_specifications: product.product_specifications,
@@ -273,7 +304,6 @@ async fn get_bookmark_handler(state:web::Data<AppState>, user: AuthenticatedUser
 }
 
 #[utoipa::path(
-    params(BHOQuery),
     responses(
         (status=200, description="Save User Bookmark", body=ApiResponse<BookmarkSchema>),
         CommonErrors
@@ -308,7 +338,9 @@ async fn bookmark_handler(state:web::Data<AppState>, payload:web::Json<BHOQuery>
                 product_name: product.product_name,
                 product_brand_name: product.product_brand_name,
                 product_sku: product.product_sku,
-                product_price: product.product_price,
+                product_price: product.product_price,        
+                product_price_text: product.product_price_text,
+                product_currency: product.product_currency,
                 product_image: product.product_image,
                 product_category: product.product_category,
                 product_details: product.product_details,
@@ -322,7 +354,6 @@ async fn bookmark_handler(state:web::Data<AppState>, payload:web::Json<BHOQuery>
 }
 
 #[utoipa::path(
-    params(BHOQuery),
     responses(
         (status=200, description="Delete User Bookmark", body=ApiResponse<BookmarkSchema>),
         CommonErrors
@@ -410,7 +441,6 @@ async fn get_history_handler(state:web::Data<AppState>, user_auth: OptionalUser,
 }
 
 #[utoipa::path(
-    params(BHOQuery),
     responses(
         (status=200, description="Save User History", body=ApiResponse<HistorySchema>),
         CommonErrors
@@ -454,7 +484,6 @@ async fn history_handler(state:web::Data<AppState>, payload:web::Json<BHOQuery>,
 }
 
 #[utoipa::path(
-    params(BHOQuery),
     responses(
         (status=200, description="Delete User History", body=ApiResponse<HistorySchema>),
         CommonErrors
@@ -610,7 +639,6 @@ async fn currencies_converstion(state:web::Data<AppState>, payload:web::Query<Cu
         (status=200, description="Product Order Count enter product id to record order counts then check user information to see changes", body=ApiResponse<Value>),
         CommonErrors
     ),
-    security(("bearer_auth" = [])),
     tag="Tools"
 )]
 #[get("/order")]
@@ -639,7 +667,6 @@ async fn user_orders(state:web::Data<AppState>, payload:web::Query<BHOQuery>, us
         (status=200, description="Score Product", body=ApiResponse<Value>),
         CommonErrors
     ),
-    security(("bearer_auth" = [])),
     tag="Tools"
 )]
 #[get("/hit")]
@@ -665,6 +692,9 @@ async fn product_score(state:web::Data<AppState>, payload:web::Query<BHOQuery>)-
 )]
 #[get("/search")]
 async fn search_product(state:web::Data<AppState>, user:OptionalUser, payload: web::Query<SearchReq>, req:HttpRequest)->Result<HttpResponse, ApiError> {
+    const STOPWORDS: [&str; 10] = ["a", "an", "the", "for", "of", "and", "or", "in", "with", "to"];
+    // const STRICT_DISTANCE: f64 = 0.25;
+
     let (identity, new_cookie) = get_user_identity(user, &req).await;
     
     let ip = extract_user_ip(&req).await;
@@ -675,7 +705,7 @@ async fn search_product(state:web::Data<AppState>, user:OptionalUser, payload: w
         return Err(ApiError::NotFound("Query string not found".to_string()));
     }
 
-    let cached_key = CacheReqResp::key_for(format!("search:{:?}:query:{}:limit:{}", &identity, &query, limit).as_ref(), &ip);
+    let cached_key = CacheReqResp::key_for(format!("search:{:?}:query:{}:limit:{}", &identity, &query.to_lowercase(), limit).as_ref(), &ip);
 
     if let Some(cached_data) = state.redis.get::<Vec<ProductHit>>(&cached_key).await {
         return Ok(ApiResponse::new(200, format!("search query [ {} ] from cache", &query), cached_data));
@@ -683,14 +713,14 @@ async fn search_product(state:web::Data<AppState>, user:OptionalUser, payload: w
 
     let _ = save_user_history(&state.db, query.clone(), &identity).await?;
 
-    let query_vector = embed_one(query.clone()).await
+    let query_vector = embed_one(query.clone(), state.env_config.py_api_host.clone()).await
         .map_err(|e| ApiError::NotFound(format!("Error: {}", e)))?;
 
     let stmt = Statement::from_sql_and_values(
         DbBackend::Postgres, 
-        "SELECT id, product_url, product_name, product_price, product_brand_name, product_category, \
-            product_image, product_sku, product_details, product_reviews, product_specifications, \
-            score, created_at, \
+        "SELECT id, product_url, product_name, product_price, product_price_text, product_currency, \
+            product_brand_name, product_category, product_image, product_sku, product_details, \
+            product_reviews, product_specifications, score, created_at, \
             (embedding <=> $1)::double precision AS distance \
         FROM products WHERE embedding IS NOT NULL \
         ORDER BY embedding <=> $1 LIMIT $2", 
@@ -701,10 +731,39 @@ async fn search_product(state:web::Data<AppState>, user:OptionalUser, payload: w
         .all(&state.db).await
         .map_err(ApiError::DatabaseError)?;
 
-    let _ = state.redis.set(&cached_key, &hits, 120).await;
+    let wrd_tokens: Vec<String> = query
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty() && !STOPWORDS.contains(w))
+        .map(String::from)
+        .collect();
+
+    let hits: Vec<ProductHit> = hits
+        .into_iter()
+        .filter(|h| {
+            let name = h.products.product_name.to_lowercase();
+            let words: Vec<&str> = name
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|w| !w.is_empty())
+                .collect();
+            !wrd_tokens.is_empty()
+                && wrd_tokens.iter().all(|t| words.contains(&t.as_str()))
+        })
+        .take(limit as usize)
+        .collect();
+    
+    let message = if hits.is_empty() {
+        let q = TextPayload::Single(query.clone());
+        actix_web::rt::spawn(make_request::<EmbedderApiResponse>(Some(q), "run-scrapy".to_string(), state.env_config.py_api_host.clone(), "post".to_string()));
+        format!("No close matches for [ {} ] yet. We're fetching products, check back in a minute.", query)
+    }else{
+        let _ = state.redis.set(&cached_key, &hits, 120).await;      // cache only real results
+        format!("searched [ {} ]", query)   
+    };
+    
     let mut response = ApiResponse::new(
         200, 
-        format!("searched [ {} ]", query), 
+        message, 
         hits
     );
     if let Some(c) = new_cookie {
@@ -726,7 +785,6 @@ pub fn config_views_routes(cfg: &mut ServiceConfig, ratelimiter:DefaultGovernorC
         .service(del_history_handler)
         .service(get_history_handler)
         .service(product_score)
-        .service(user_orders)
         .service(
             scope("/user")
             .wrap(from_fn(check_auth_middleware))
@@ -734,6 +792,7 @@ pub fn config_views_routes(cfg: &mut ServiceConfig, ratelimiter:DefaultGovernorC
             .service(del_bookmark_handler)
             .service(get_bookmark_handler)
             .service(get_user)
+            .service(user_orders)
         )
     );
 }

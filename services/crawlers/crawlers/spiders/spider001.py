@@ -1,5 +1,6 @@
 import scrapy
 import re
+from decimal import Decimal
 
 class Spider001Spider(scrapy.Spider):
     name = "crawl001"
@@ -22,8 +23,20 @@ class Spider001Spider(scrapy.Spider):
         pattern = re.compile(''.join(lookaheads), re.IGNORECASE)
         return pattern
     
+    def price_parser(self, raw_txt:str) -> Decimal | None:
+        if not raw_txt:
+            return None
+        
+        base_price_str = raw_txt.split("-")[0]
+        numeric_str = re.sub(r'[^\d.]', '', base_price_str)
+        
+        if not numeric_str:
+            return None
+        
+        return Decimal(numeric_str)
+    
     async def start(self):
-        for x in range(1, 11):
+        for x in range(1, 5):
             url = f"https://www.jumia.com.ng/catalog/?q={self.search_key}&page={x}#catalog-listing"
             yield scrapy.Request(url, callback=self.parse)
             
@@ -53,8 +66,10 @@ class Spider001Spider(scrapy.Spider):
                 continue
 
     async def parse_prod(self, response):
-        price = response.xpath("//span[@class='-b -ubpt -tal -fs24 -prxs']/text()").get()
-    
+        price = response.xpath("//span[@class='-b -ubpt -tal -fs24 -prxs']/text()").get(default="").strip()
+        
+        d_price = self.price_parser(price)
+
         prod_details = []
         prod_features = []
         prod_specs = []
@@ -114,10 +129,13 @@ class Spider001Spider(scrapy.Spider):
             "product_brand": brand,
             "product_category": response.meta["category"],
             "product_image": response.meta["image"],
-            "product_price": price,
+            "product_price": d_price,
+            "product_price_text": price,
+            "product_currency": "₦",
             "product_details": prod_detail,
             "product_specifications": prod_spec,
             "product_reviews": reviews,
+            "score": 0
         }
 
 

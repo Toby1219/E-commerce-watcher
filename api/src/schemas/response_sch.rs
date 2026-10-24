@@ -1,4 +1,5 @@
 use actix_web::{HttpResponse, ResponseError, cookie::Cookie, http::StatusCode};
+use rust_decimal::Decimal;
 use serde::{Serialize, Deserialize};
 use sea_orm::FromQueryResult;
 use thiserror::Error;
@@ -63,6 +64,9 @@ pub enum ApiError {
 
     #[error("Internal server error")]
     SeverError,
+
+    #[error("Validation Failed: {0}")]
+    ValidationError(String)
 }
 
 impl<T: Serialize> ApiResponse<T> {
@@ -107,6 +111,7 @@ impl ResponseError for ApiError {
             }
             ApiError::NotFound(msg) => HttpResponse::NotFound().json(msg),
             ApiError::SeverError => HttpResponse::InternalServerError().json("Internal server error: {Server Error}"),
+            ApiError::ValidationError(msg) => HttpResponse::BadRequest().json(msg)
         }
     }
 }
@@ -116,7 +121,9 @@ pub struct ProductsSchema{
     pub id: i64,
     pub product_url: String,
     pub product_name: String,
-    pub product_price: String,
+    pub product_price: Decimal,
+    pub product_price_text: String,
+    pub product_currency: String,
     pub product_brand_name: Option<String>,
     pub product_category: Option<String>,
     pub product_image:Option<String>,

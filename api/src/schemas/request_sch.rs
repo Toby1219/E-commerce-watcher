@@ -24,12 +24,14 @@ pub struct CreateUser{
     pub password_text: String,
 }
 
-#[derive(Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Serialize, Deserialize, ToSchema, IntoParams, Validate)]
 pub struct UpdateUser{
     /// Update user Email
     #[param(example="example@gmail.com")]
+    #[validate(email)]
     pub email: Option<String>,
     /// Update username
+    #[validate(length(min=4))]
     pub username: Option<String>,
     // pub password_text: Option<String>
 }

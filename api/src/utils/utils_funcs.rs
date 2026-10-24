@@ -1,6 +1,7 @@
 use sea_orm::*;
 use chrono::{Utc, Duration};
 use actix_web::{HttpRequest, web};
+use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 use uuid::Uuid;
 use actix_web::cookie::{Cookie, SameSite, time::Duration as CookieDuration};
@@ -18,9 +19,25 @@ use crate::utils::constants::set_cookies;
 use crate::utils::jwt::{issue_jwt, generate_refresh_token, hash_refresh_token};
 use crate::schemas::request_sch::{BHOQuery};
 use crate::schemas::others::Identity;
-use crate::schemas::others::{TextPayload, RequestBody, EmbedderApiResponse};
+use crate::schemas::others::{TextPayload, RequestBody};
 
 
+pub async fn bearer_or_cookie_token(req:HttpRequest)-> Result<String, ApiError>{
+    let token_header = req.cookie("access_token")
+        .map(|c| c.value().to_string())
+        .or_else(|| {
+            req
+                .headers()
+                .get("Authorization")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|h| h.strip_prefix("Bearer "))
+                .map(|s| s.to_string())
+        });
+    match token_header {
+        Some(token) => Ok(token),
+        None => Err(ApiError::Unauthorized)
+    }
+}
 
 pub async fn get_user_identity(user: OptionalUser, req:&HttpRequest)->(Identity, Option<Cookie<'static>>){
     let identity = match user.0 {
@@ -75,15 +92,12 @@ pub async fn get_stored_token(hashed:&str, db:&DatabaseConnection)->Result<token
 }
 
 pub async fn revoke_rotate_token(
-    db:&DatabaseConnection, 
     stored:tokens::Model, 
     user:&users::Model,
     state:&web::Data<AppState>
 )->Result<(String, String), ApiError>{
     let mut active: tokens::ActiveModel = stored.into();
-    active.revoked = Set(true);
-    active.update(db).await?;
-
+    
     let new_acess_token = match issue_jwt(&user, &state) {
         Ok(t) => t,
         Err(_) => String::new(),
@@ -92,17 +106,10 @@ pub async fn revoke_rotate_token(
     let new_raw_refresh = generate_refresh_token();
     let new_hashed = hash_refresh_token(new_raw_refresh.clone());
     
-    let mut tks:tokens::ActiveModel = Tokens::find()
-        .filter(tokens::Column::UserId.eq(user.id))
-        .one(&state.db)
-        .await
-        .map_err(|e| ApiError::DatabaseError(e))?
-        .ok_or_else(|| ApiError::NotFound("Token not found in db".to_string()))?.into();
-
-    tks.token = Set(new_acess_token.clone());
-    tks.hash_token = Set(new_hashed.clone());
-    tks.revoked = Set(false);
-    tks.update(&state.db).await?;
+    active.token = Set(new_acess_token.clone());
+    active.hash_token = Set(new_hashed.clone());
+    active.revoked = Set(false);
+    active.update(&state.db).await?;
     
     Ok((new_acess_token, new_raw_refresh))
 
@@ -155,7 +162,7 @@ pub async  fn extract_bookmarks(user_id:i64, db:&DatabaseConnection)->Result<Boo
         .await
         .map_err(|e| ApiError::DatabaseError(e))?;
 
-    let prod_ids:Vec<i64> = book_marks.into_iter().map(|m| m.id).collect();
+    let prod_ids:Vec<i64> = book_marks.into_iter().map(|m| m.product_id).collect();
 
     let products = Products::find()
         .filter(products::Column::Id.is_in(prod_ids))
@@ -172,6 +179,8 @@ pub async  fn extract_bookmarks(user_id:i64, db:&DatabaseConnection)->Result<Boo
                 product_brand_name: p.product_brand_name,
                 product_sku: p.product_sku,
                 product_price: p.product_price,
+                product_price_text: p.product_price_text,
+                product_currency: p.product_currency,
                 product_image: p.product_image,
                 product_category: p.product_category,
                 product_details: p.product_details,
@@ -305,32 +314,52 @@ pub async fn save_user_history(db:&DatabaseConnection, phrase: String, identity:
     }
 }
 
-pub async fn make_request(query:TextPayload, url_path: String)->Result<EmbedderApiResponse, ApiError> {
+pub async fn make_request<T: DeserializeOwned + std::fmt::Debug>(
+    query:Option<TextPayload>, 
+    url_path: String, 
+    host: String,
+    method: String
+)->Result<T, ApiError> {
     let client = Client::new();
-    let url = format!("http://127.0.0.1:8000/{}", url_path);
+    let url = format!("{}/{}", host, url_path);
 
-    let request_body = RequestBody { text: query };
+    let request_body = match query {
+     Some(q) => RequestBody { text: q},
+     None => RequestBody {text: TextPayload::Single("".to_string())}  
+    };
 
-    let response = client
-        .post(url)
-        .json(&request_body)
-        .send()
-        .await
-        .map_err(|e| ApiError::NotFound(format!("[External API request failed] ERROR: {}", e)))?;
-    
+    let response = match method.as_str() {
+        "get" => {
+            client
+                .get(url)
+                .send()
+                .await
+                .map_err(|e| ApiError::NotFound(format!("[External API request failed] ERROR: {}", e)))?  
+        },
+        "post" => {
+            client
+                .post(url)
+                .json(&request_body)
+                .send()
+                .await
+                .map_err(|e| ApiError::NotFound(format!("[External API request failed] ERROR: {}", e)))?  
+        },
+        _ => return Err(ApiError::NotFound(format!("Unsupported HTTP method: {}", method))),
+    };
     if !response.status().is_success() {
         return Err(ApiError::NotFound(format!(
             "[External API returned non-success status] STATUS: {}",
             response.status()
         )));
     }
-
-    let api_response: EmbedderApiResponse = response
+  
+    let api_response: T = response
         .json()
         .await
         .map_err(|e| ApiError::NotFound(format!("[failed to parse API response json] ERROR: {}", e)))?;
-
+    log::info!("response {:?}", api_response);
     Ok(api_response)
+
 }
 
 

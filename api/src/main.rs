@@ -11,7 +11,7 @@ use api::utils::db::connect_db;
 use api::middleware::limiter::RoutesLimiter;
 use api::routes::{views::config_views_routes, auth::config_auth_routes};
 use api::schemas::others::{AppEnvConfig, AppState};
-use api::tasks::{cleanup_task::{spawn_token_cleanup_worker, spawn_history_cleanup_worker}, embed_task::spawn_embedding_backfill, };
+use api::tasks::{cleanup_task::{spawn_token_cleanup_worker, spawn_history_cleanup_worker}, embed_task::spawn_embedding_backfill, other_tasks::run_curency_spider};
 
 async fn fallback(request:HttpRequest)->HttpResponse {
     HttpResponse::NotFound().json(serde_json::json!({
@@ -41,6 +41,7 @@ async fn main()-> std::io::Result<()>{
     spawn_token_cleanup_worker(state.db.clone());
     spawn_history_cleanup_worker(state.db.clone());
     spawn_embedding_backfill(state.clone());
+    run_curency_spider();
 
     let limiter = RoutesLimiter::new();
 
