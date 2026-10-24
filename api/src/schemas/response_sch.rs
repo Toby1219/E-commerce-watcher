@@ -65,6 +65,9 @@ pub enum ApiError {
     #[error("Internal server error")]
     SeverError,
 
+    #[error("Service unavailable {0}")]
+    ServiceUnavailable(String),
+
     #[error("Validation Failed: {0}")]
     ValidationError(String)
 }
@@ -99,20 +102,22 @@ impl<T: Serialize> ApiResponse<T> {
 
 impl ResponseError for ApiError {
     fn error_response(&self) -> HttpResponse<actix_web::body::BoxBody> {
-        match self {
-            ApiError::Unauthorized => HttpResponse::Unauthorized().json("Invalid credentials"),
-            ApiError::DatabaseError(_) => HttpResponse::InternalServerError().json("Internal server error (DB Error)"),
-            ApiError::JsonError(_) => HttpResponse::BadRequest().json("Invalid JSON payload"),
+        let (status, message) = match self {
+            ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string()),
+            ApiError::DatabaseError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error (DB Error)".to_string()),
+            ApiError::JsonError(_) => (StatusCode::BAD_REQUEST, "Invalid JSON payload".to_string()),
             ApiError::JwtErr(e) => match e.kind(){
                 errors::ErrorKind::ExpiredSignature => {
-                    HttpResponse::Unauthorized().json("Token Expired")
+                    (StatusCode::UNAUTHORIZED, "Token Expired".to_string())
                 },
-                _ => HttpResponse::Unauthorized().json("Invalid Token")
+                _ => (StatusCode::UNAUTHORIZED, "Invalid Token".to_string())
             }
-            ApiError::NotFound(msg) => HttpResponse::NotFound().json(msg),
-            ApiError::SeverError => HttpResponse::InternalServerError().json("Internal server error: {Server Error}"),
-            ApiError::ValidationError(msg) => HttpResponse::BadRequest().json(msg)
-        }
+            ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
+            ApiError::SeverError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error: {Server Error}".to_string()),
+            ApiError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.to_string()),
+            ApiError::ValidationError(msg) => (StatusCode::BAD_REQUEST, msg.clone())
+        };
+        ApiResponse::new(status.as_u16(), message, ())
     }
 }
 

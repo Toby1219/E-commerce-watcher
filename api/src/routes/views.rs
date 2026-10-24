@@ -714,7 +714,7 @@ async fn search_product(state:web::Data<AppState>, user:OptionalUser, payload: w
     let _ = save_user_history(&state.db, query.clone(), &identity).await?;
 
     let query_vector = embed_one(query.clone(), state.env_config.py_api_host.clone()).await
-        .map_err(|e| ApiError::NotFound(format!("Error: {}", e)))?;
+        .map_err(|e| ApiError::ServiceUnavailable(format!("Error: {}", e)))?;
 
     let stmt = Statement::from_sql_and_values(
         DbBackend::Postgres, 

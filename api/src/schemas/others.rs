@@ -6,7 +6,7 @@ use serde::{Serialize, Deserialize};
 use actix_web::{FromRequest, dev::Payload, HttpRequest, HttpMessage, web};
 use futures_util::future::{ready, Ready};
 use jsonwebtoken::TokenData;
-use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme, ApiKey, ApiKeyValue};
 use utoipa::{Modify, OpenApi, IntoResponses, ToSchema};
 
 use crate::middleware::redis_cache::CacheReqResp;
@@ -149,6 +149,16 @@ impl Modify for SecurityAddon { // hook called when the spec is built
                     .bearer_format("JWT") // purely informational
                     .build(), // finish
             ),
+        );
+
+        components.add_security_scheme(                       
+            "refresh_token",                                 
+            SecurityScheme::ApiKey(ApiKey::Cookie(           
+                ApiKeyValue::with_description(
+                    "refresh_token",                    
+                    "Usually httpOnly cookie set by /auth/login and /auth/refresh",
+                ),
+            )),
         );
     }
 }

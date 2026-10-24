@@ -6,7 +6,7 @@ use utoipa::OpenApi;
 use utoipa_actix_web::AppExt; 
 use utoipa_swagger_ui::SwaggerUi; 
 
-use api::{middleware::redis_cache::CacheReqResp, schemas::others::ApiDoc};
+use api::{middleware::redis_cache::CacheReqResp, schemas::{others::ApiDoc, response_sch::ApiResponse}};
 use api::utils::db::connect_db;
 use api::middleware::limiter::RoutesLimiter;
 use api::routes::{views::config_views_routes, auth::config_auth_routes};
@@ -14,10 +14,11 @@ use api::schemas::others::{AppEnvConfig, AppState};
 use api::tasks::{cleanup_task::{spawn_token_cleanup_worker, spawn_history_cleanup_worker}, embed_task::spawn_embedding_backfill, other_tasks::run_curency_spider};
 
 async fn fallback(request:HttpRequest)->HttpResponse {
-    HttpResponse::NotFound().json(serde_json::json!({
-        "status_code": format!("404"),
-        "details": format!("No route for {} {}", request.method(), request.path()),
-    }))
+    ApiResponse::<()>::new(                                                  
+        404,                                                                 
+        format!("No route for {} {}", request.method(), request.path()),    
+        (),                                                                
+    )
 }
 
 

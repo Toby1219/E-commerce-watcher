@@ -128,6 +128,7 @@ async fn login_user(
         (status=200, description="Refresh User API Token", body=ApiResponse<UserSchema>),
         CommonErrors
     ),
+    security(("refresh_token" = [])),
     tag="Auth"
 )]
 #[post("/refresh")]
@@ -184,6 +185,7 @@ async fn refresh_token(
         (status=200, description="Logout and Revoke API Token", body=ApiResponse<UserSchema>),
         CommonErrors
     ),
+    security(("bearer_auth" = [])),
     tag="Account (protected)"
 )]
 #[post("/logout")]
