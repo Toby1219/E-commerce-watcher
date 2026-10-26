@@ -6,7 +6,7 @@ from email.utils import parsedate_to_datetime
 
 load_dotenv()
 
-CURENCY_API_URL = os.getenv("CURENCY_API_URL")
+CURRENCY_API_URL = os.getenv("CURRENCY_API_URL")
 
 class CurencyApiSpider(scrapy.Spider):
     name = "curency_api"
@@ -18,7 +18,7 @@ class CurencyApiSpider(scrapy.Spider):
     }
     
     async def start(self):
-        url = CURENCY_API_URL
+        url = CURRENCY_API_URL
         yield scrapy.Request(url=url, callback=self.parse)
     
     async def parse(self, response):

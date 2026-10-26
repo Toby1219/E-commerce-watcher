@@ -5,6 +5,7 @@ import sys
 import time
 from pathlib import Path
 from dotenv import load_dotenv
+from datetime import datetime, timezone
 
 load_dotenv()
 os.environ["HF_TOKEN"] = "hf_xxxxxxxxxxxxxxxx"
@@ -76,7 +77,10 @@ async def run_currency_scraper():
         async with scrape_slots:
             proc = await asyncio.create_subprocess_exec(
                 sys.executable,
-                "scrapy crawl curency_api",
+                "-m",
+                "scrapy",
+                "crawl",
+                "curency_api",
                 cwd=SCRAPER_DIR
             )
             try:
@@ -92,8 +96,6 @@ async def run_currency_scraper():
         log.info("Finished runing the currency spider")
 
 
-
-
 @app.post("/text-embedder")
 async def embedded_text(payload: PayloadQuery):
     text_arr = await embed_text(payload.text)       
@@ -101,7 +103,7 @@ async def embedded_text(payload: PayloadQuery):
 
 @app.post("/run-scrapy")
 async def run_scrapy(payload: PayloadQuery, background: BackgroundTasks):
-    if isinstance(payload, list[str]):
+    if not isinstance(payload.text, str):
         return {"status": "Invalid request payload"}
     query = payload.text.strip().lower()
 
@@ -117,11 +119,13 @@ async def run_scrapy(payload: PayloadQuery, background: BackgroundTasks):
     background.add_task(run_scraper, query)
     return {"status": "Started to Run Scrapy crawler in background for products"}
 
-
 @app.get("/update-currency")
 async def run_update_currency(background: BackgroundTasks):
-    if time.monotonic() < COOLDOWN:
+    current_time = time.monotonic()
+    last_time_run = last_run.get("currency", -COOLDOWN)
+    if current_time - last_time_run < COOLDOWN:
         return {"status": "recently scraped currency"}
+    last_run["currency"] = current_time    
     background.add_task(run_currency_scraper)
     return {"status": "Started to Run Scrapy crawler in background for currency"}
     

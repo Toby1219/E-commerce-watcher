@@ -42,7 +42,7 @@ async fn main()-> std::io::Result<()>{
     spawn_token_cleanup_worker(state.db.clone());
     spawn_history_cleanup_worker(state.db.clone());
     spawn_embedding_backfill(state.clone());
-    run_curency_spider();
+    run_curency_spider(state.env_config.py_api_host.clone());
 
     let limiter = RoutesLimiter::new();
 

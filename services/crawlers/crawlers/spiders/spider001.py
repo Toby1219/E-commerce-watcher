@@ -42,7 +42,6 @@ class Spider001Spider(scrapy.Spider):
             
     async def parse(self, response):
         prods = response.xpath("//article[@class='prd _fb col c-prd']")
-        c = 0
         patterns = self.build_search_pattern(self.search_key)
         for prod in prods:
             name =  prod.css("div.info > h3.name::text").get()
@@ -52,15 +51,14 @@ class Spider001Spider(scrapy.Spider):
                 prod_sku = prod.css("a.core::attr(data-gtm-id)").get()
                 prod_brand = prod.css("a.core::attr(data-gtm-brand)").get()
                 prod_category = prod.css("a.core::attr(data-gtm-category)").get()
-                prod_image = response.css("div.img-c > img.img::attr(data-src)").getall()[c]
-                c += 1
+                # prod_image = prod.css("div.img-c > div.img-w > img.img::attr(data-src)").get()
                 yield scrapy.Request(url=f"{self.domain}{prod_link}", meta={
                     "url":f"{self.domain}{prod_link}",
                     "name":prod_name,
                     "sku":prod_sku,
                     "brand":prod_brand,
                     "category":prod_category,
-                    "image":prod_image
+                    # "image":prod_image
                 }, callback=self.parse_prod)
             else:
                 continue
@@ -121,14 +119,15 @@ class Spider001Spider(scrapy.Spider):
         brand = response.meta["brand"]
         if not brand:
             brand = response.css("div.-phm > div.-pvxs > a._more::text").get()
-                     
+          
+        image = response.css("div#imgs > a > img::attr(data-src)").get()           
         yield {
             "product_url": response.meta["url"],
             "product_name": response.meta["name"],
             "product_sku": response.meta["sku"],
             "product_brand": brand,
             "product_category": response.meta["category"],
-            "product_image": response.meta["image"],
+            "product_image": image,
             "product_price": d_price,
             "product_price_text": price,
             "product_currency": "₦",

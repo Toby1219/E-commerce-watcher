@@ -97,7 +97,7 @@ async fn login_user(
         Some(model) => {
             let paswrd = verify_hashpaswrd(payload.password_text, model.password_hash.clone());
             if !paswrd{
-                return Ok(ApiResponse::new(401, format!("Incorrect password"), ()));
+                return Err(ApiError::Unauthorized);
             }
 
             let (raw_refresh, token, set_cookie) = generate_set_tokens(&state, &model, model.id).await?;

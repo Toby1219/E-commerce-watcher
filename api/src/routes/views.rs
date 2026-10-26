@@ -453,7 +453,7 @@ async fn history_handler(state:web::Data<AppState>, payload:web::Json<BHOQuery>,
     let (identity, new_cookie) = get_user_identity(user_auth, &req).await;
     let payload = payload.into_inner();
 
-    let phrase_wrd = payload.phrase.expect("No phrase is sent");
+    let phrase_wrd = payload.phrase.ok_or(ApiError::ValidationError("No phrase is sent".to_string()))?;
     let u_h = save_user_history(&state.db, phrase_wrd, &identity).await?;
 
     match identity {
