@@ -1,4 +1,5 @@
-.vscode
+*.vscode
+*__pycache__
 /services/.venv
 /services/crawlers/.scrapy
 services/crawlers/.env

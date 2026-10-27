@@ -716,20 +716,6 @@ async fn search_product(state:web::Data<AppState>, user:OptionalUser, payload: w
     let query_vector = embed_one(query.clone(), state.env_config.py_api_host.clone()).await
         .map_err(|e| ApiError::ServiceUnavailable(format!("Error: {}", e)))?;
 
-    let stmt = Statement::from_sql_and_values(
-        DbBackend::Postgres, 
-        "SELECT id, product_url, product_name, product_price, product_price_text, product_currency, \
-            product_brand_name, product_category, product_image, product_sku, product_details, \
-            product_reviews, product_specifications, score, created_at, \
-            (embedding <=> $1)::double precision AS distance \
-        FROM products WHERE embedding IS NOT NULL \
-        ORDER BY embedding <=> $1 LIMIT $2", 
-        [PgVector::from(query_vector).into(), limit.into()]
-    );
-
-    let hits: Vec<ProductHit> = ProductHit::find_by_statement(stmt)
-        .all(&state.db).await
-        .map_err(ApiError::DatabaseError)?;
 
     let wrd_tokens: Vec<String> = query
         .to_lowercase()
@@ -738,19 +724,41 @@ async fn search_product(state:web::Data<AppState>, user:OptionalUser, payload: w
         .map(String::from)
         .collect();
 
-    let hits: Vec<ProductHit> = hits
-        .into_iter()
-        .filter(|h| {
-            let name = h.products.product_name.to_lowercase();
-            let words: Vec<&str> = name
-                .split(|c: char| !c.is_alphanumeric())
-                .filter(|w| !w.is_empty())
-                .collect();
-            !wrd_tokens.is_empty()
-                && wrd_tokens.iter().all(|t| words.contains(&t.as_str()))
-        })
-        .take(limit as usize)
-        .collect();
+    let hits: Vec<ProductHit> = if wrd_tokens.is_empty() {
+        Vec::new()
+    } else {
+        let candidates = limit.max(200);
+        let name_regex = format!(                                     
+            "^{}",
+            wrd_tokens.iter()                                        
+                .map(|t| format!("(?=.*\\y{}\\y)", t))                
+                .collect::<String>(),                                
+        );
+        let stmt = Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT p.id, p.product_url, p.product_name, p.product_price, p.product_price_text, p.product_currency, \
+                p.product_brand_name, p.product_category, p.product_image, p.product_sku, p.product_details, \
+                p.product_reviews, p.product_specifications, p.score, p.created_at, c.distance \
+            FROM ( \
+                SELECT id, product_name, (embedding <=> $1)::double precision AS distance \
+                FROM products WHERE embedding IS NOT NULL \
+                ORDER BY embedding <=> $1 LIMIT $4 \
+            ) c \
+            JOIN products p ON p.id = c.id \
+            WHERE c.product_name ~* $3 \
+            ORDER BY c.distance LIMIT $2",
+           
+            [
+                PgVector::from(query_vector).into(),                 
+                limit.into(),                                         
+                name_regex.into(),                                    
+                candidates.into(),                                    
+            ],
+        );
+        ProductHit::find_by_statement(stmt)
+            .all(&state.db).await
+            .map_err(ApiError::DatabaseError)?
+    };
     
     let message = if hits.is_empty() {
         let q = TextPayload::Single(query.clone());
