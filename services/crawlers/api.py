@@ -11,7 +11,6 @@ load_dotenv()
 os.environ["HF_TOKEN"] = "hf_xxxxxxxxxxxxxxxx"
 os.environ["HF_HUB_OFFLINE"] = "1"
 
-
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sentence_transformers import SentenceTransformer
@@ -39,6 +38,7 @@ except:
 SCRAPER_DIR = Path(__file__).parent
 SCRAPER_SCRIPT = SCRAPER_DIR / "main.py"
 COOLDOWN = 3600
+COOLDOWN_CURRENCY = 86400
 
 last_run: dict[str, float] = {}
 in_flight: set[str] = set()
@@ -101,6 +101,10 @@ async def run_currency_scraper():
         log.info("Finished runing the currency spider")
 
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
 @app.post("/text-embedder")
 async def embedded_text(payload: PayloadQuery):
     text_arr = await embed_text(payload.text)       
@@ -127,8 +131,8 @@ async def run_scrapy(payload: PayloadQuery, background: BackgroundTasks):
 @app.get("/update-currency")
 async def run_update_currency(background: BackgroundTasks):
     current_time = time.monotonic()
-    last_time_run = last_run.get("currency", -COOLDOWN)
-    if current_time - last_time_run < COOLDOWN:
+    last_time_run = last_run.get("currency", -COOLDOWN_CURRENCY)
+    if current_time - last_time_run < COOLDOWN_CURRENCY:
         return {"status": "recently scraped currency"}
     last_run["currency"] = current_time    
     background.add_task(run_currency_scraper)

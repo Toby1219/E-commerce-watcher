@@ -634,6 +634,7 @@ async fn currencies_converstion(state:web::Data<AppState>, payload:web::Query<Cu
 
 // routes to count orders (When user click a product link comunicate with api before redirecting to the website)
 #[utoipa::path(
+    description = "When user clicks a product URL to visit the original product page user order count increased",
     params(BHOQuery),
     responses(
         (status=200, description="Product Order Count enter product id to record order counts then check user information to see changes", body=ApiResponse<Value>),
@@ -662,6 +663,7 @@ async fn user_orders(state:web::Data<AppState>, payload:web::Query<BHOQuery>, us
 
 // to calculate product scores
 #[utoipa::path(
+    description = "when product is clicked on when api data is integrated to a web ui product hit count is increased and used when updating product data",
     params(BHOQuery),
     responses(
         (status=200, description="Score Product", body=ApiResponse<Value>),

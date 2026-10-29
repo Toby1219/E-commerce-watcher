@@ -1,110 +1,14 @@
-use actix_web::{
-    App, body::MessageBody, cookie::Cookie, dev::{Service, ServiceResponse}, http::StatusCode, test, web
-};
-use actix_http::Request;
-use serde_json::{json, Value};
-use sea_orm::prelude::DatabaseConnection;
+mod helper_func;
+
+use actix_web::{http::StatusCode, test};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::atomic::{AtomicU32, Ordering};
-use utoipa::OpenApi;
-use utoipa_actix_web::AppExt; 
-
-use api::middleware::redis_cache::CacheReqResp;
-use api::schemas::others::{AppEnvConfig, AppState, ApiDoc};
-use api::utils::db::connect_db;
-use api::middleware::limiter::RoutesLimiter;
-use api::routes::{auth::config_auth_routes, views::config_views_routes};
-
+use serde_json::json;
+use crate::helper_func::*;
 
 //-----------------------------------------------------
 // HELPER FUNCTION FOR TEST CASES
 //-----------------------------------------------------
-static TEST_USER_COUNTER:AtomicU32 = AtomicU32::new(0);
 
-fn unique_test_email() -> String {
-    let n = TEST_USER_COUNTER.fetch_add(1, Ordering::SeqCst);
-    format!("testuser_{}_{}@gmail.com", std::process::id(), n)
-}
-
-fn unique_test_username() -> String {
-    let n = TEST_USER_COUNTER.fetch_add(1, Ordering::SeqCst);
-    format!("testuser_{}_{}", std::process::id(), n)
-}
-
-async fn build_test_app() -> impl Service<
-    actix_http::Request,
-    Response = ServiceResponse<impl MessageBody>,
-    Error = actix_web::Error,
-> {
-    dotenvy::dotenv().ok();
-
-    let config_envapp = AppEnvConfig::from_env().unwrap();
-    let db_conn: DatabaseConnection = connect_db(&config_envapp.db_url).await;
-    let redis_conn: CacheReqResp = CacheReqResp::connect(&config_envapp.redis_url).await.expect("failed to connect to Redis");
-    
-    let state = web::Data::new(AppState {
-        db: db_conn,
-        redis: redis_conn,
-        env_config: config_envapp.clone(),
-    });
-
-    let limiter = RoutesLimiter::new();
-
-    let (app, _) =
-        App::new()
-            .into_utoipa_app()
-            .openapi(ApiDoc::openapi())
-            .app_data(state.clone())
-            .configure(|cfg| config_auth_routes(cfg, limiter.auth_route.clone()))
-            .configure(|cfg| config_views_routes(cfg, limiter.view_route.clone()))
-            .split_for_parts();
-
-    test::init_service(app).await
-}
-
-async fn login_and_get_token<S, B>(app: &S) -> (Value, Cookie<'_>)
-where 
-    S: Service<Request, Response = ServiceResponse<B>, Error = actix_web::Error>,
-    B: MessageBody,
-{
-    let username = unique_test_username();
-    let email = unique_test_email();
-
-    let register_req = test::TestRequest::post()
-        .uri("/auth/register")
-        .peer_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
-        .set_json(json!({
-            "username": username,
-            "email": email,
-            "password_text": "T1234567890."
-        }))
-        .to_request();
-    let register_resp = test::call_service(app, register_req).await;
-    assert_eq!(register_resp.status(), StatusCode::CREATED, "setup: registration failed");
-    
-    let login_req = test::TestRequest::post()
-        .uri("/auth/login")
-        .peer_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
-        .set_json(json!({ "email": email, "password_text": "T1234567890." }))
-        .to_request();
-    let login_resp = test::call_service(&app, login_req).await;
-
-    let refresh_cookie: Cookie<'_> = login_resp.response()
-        .cookies()
-        .find(|c| c.name() == "refresh_token")
-        .expect("refresh token cookie was not set")
-        .into_owned();
-
-    let login_body: serde_json::Value = test::read_body_json(login_resp).await;
-    let token_ = login_body["body"]["token"].as_str().unwrap().to_string();
-    let refresh =  login_body["body"]["refresh_token"].as_str().unwrap().to_string();
-
-    let tokens_value = json!({
-        "token":token_,
-        "refresh": refresh
-    });
-    (tokens_value, refresh_cookie)
-}
 
 
 //-----------------------------------------------------
@@ -463,10 +367,57 @@ async fn test_currency_success(){
     assert_eq!(response_oto_status, StatusCode::OK);
 }
 
+#[actix_web::test]
+async fn test_user_order(){
+    let app = build_test_app().await;
+
+    let (tokens_data, _) = login_and_get_token(&app).await;
+    let token_str = tokens_data["token"]
+        .as_str()
+        .expect("access token was not a string");
+
+    let req = test::TestRequest::get()
+        .uri("/api/user/order?product_id=1")
+        .peer_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
+        .insert_header(("Authorization", format!("Bearer {}", token_str)))
+        .to_request();
+
+    let response = test::call_service(&app, req).await;
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+
+#[actix_web::test]
+async fn test_prod_hit(){
+    let app = build_test_app().await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/hit?product_id=1")
+        .peer_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
+        .to_request();
+
+    let response = test::call_service(&app, req).await;
+    assert_eq!(response.status(), StatusCode::OK);
+}
 
 // search handler test 
 #[actix_web::test]
-async fn test_search_success(){}
+async fn test_search(){
+    let pyserver = TestSuitPyServer::new().await;
+    eprintln!("\n {:?} \n", pyserver);
+    let app = build_test_app().await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/search?query=laptop")
+        .peer_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
+        .to_request();
+
+    let response = test::call_service(&app, req).await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // let body: serde_json::Value = test::read_body_json(response).await;
+    // eprintln!("\n {:?} \n", body);
+}
 
 //-----------------------------------------------------
 // FAILED REQUEST TEST CASES
