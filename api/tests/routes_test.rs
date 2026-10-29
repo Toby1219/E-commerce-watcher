@@ -346,7 +346,6 @@ async fn test_del_history_success(){
 }
 
 #[actix_web::test]
-
 async fn test_currency_success(){
     let app = build_test_app().await;
 
@@ -403,8 +402,7 @@ async fn test_prod_hit(){
 // search handler test 
 #[actix_web::test]
 async fn test_search(){
-    let pyserver = TestSuitPyServer::new().await;
-    eprintln!("\n {:?} \n", pyserver);
+    let _ = TestSuitPyServer::new().await;
     let app = build_test_app().await;
 
     let req = test::TestRequest::get()

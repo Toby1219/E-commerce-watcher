@@ -145,7 +145,7 @@ impl TestSuitPyServer {
         eprintln!("Working directory: {}", python_project_dir.display());
 
         let mut child = Command::new(venv_python_path)
-            .args(["-m", "uvicorn", "api::app", "--host", "127.0.0.1", "--port", "8000"])
+            .args(["-m", "uvicorn", "api:app", "--host", "127.0.0.1", "--port", "8000"])
             .current_dir(python_project_dir)
             .spawn()
             .expect("Failed to start FastAPI server from external directory. Check .venv path.");
