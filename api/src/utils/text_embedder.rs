@@ -20,9 +20,7 @@ pub async fn embed_one(text: String, host:String) -> Result<Vec<f32>, ApiError> 
     ).await?;
     match response.data {
         EmbeddingResponseData::Single(v) => Ok(v),
-        EmbeddingResponseData::Multiple(_) => Err(ApiError::NotFound(
-            "[text embedder] expected a single vector, got many".to_string(),
-        )),
+        EmbeddingResponseData::Multiple(_) => Err(ApiError::SeverError),
     }
 }
 

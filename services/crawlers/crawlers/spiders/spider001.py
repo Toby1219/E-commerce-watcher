@@ -23,15 +23,15 @@ class Spider001Spider(scrapy.Spider):
         pattern = re.compile(''.join(lookaheads), re.IGNORECASE)
         return pattern
     
-    def price_parser(self, raw_txt:str) -> Decimal | None:
+    def price_parser(self, raw_txt:str) -> Decimal:
         if not raw_txt:
-            return None
+            return Decimal("0.00")
         
         base_price_str = raw_txt.split("-")[0]
         numeric_str = re.sub(r'[^\d.]', '', base_price_str)
         
         if not numeric_str:
-            return None
+            return Decimal("0.00")
         
         return Decimal(numeric_str)
     
@@ -133,8 +133,7 @@ class Spider001Spider(scrapy.Spider):
             "product_currency": "₦",
             "product_details": prod_detail,
             "product_specifications": prod_spec,
-            "product_reviews": reviews,
-            "score": 0
+            "product_reviews": reviews
         }
 
 

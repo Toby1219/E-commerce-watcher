@@ -16,7 +16,7 @@ class Product(Model):
     product_details = fields.JSONField()
     product_reviews = fields.JSONField()
     product_specifications = fields.JSONField()
-    score = fields.BigIntField()
+    score = fields.BigIntField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:

@@ -14,7 +14,7 @@ use crate::middleware::authentication::check_auth_middleware;
 use crate::schemas::response_sch::{ApiError, ApiResponse, UserSchema, RefreshResponse};
 use crate::schemas::request_sch::{CreateUser, LoginUser, RefreshTokenRequest, UpdateUser};
 use crate::schemas::others::{AppState, AuthenticatedUser, Claims, CommonErrors};
-use crate::utils::constants::{set_cookies, DefaultGovernorConfig};
+use crate::utils::constants::DefaultGovernorConfig;
 use crate::utils::jwt::{hash_refresh_token};
 use crate::utils::pwdhash::{hash_paswrd, verify_hashpaswrd};
 use crate::utils::utils_funcs::{get_stored_token, revoke_rotate_token, extract_refresh_token, generate_set_tokens, bearer_or_cookie_token};
@@ -162,9 +162,7 @@ async fn refresh_token(
     };
     
     //revoke and rotate token
-    let (new_acess_token, new_raw_refresh) = revoke_rotate_token(stored, &user, &state).await?;
-    
-    let set_cookies = set_cookies(new_acess_token.to_string(), new_raw_refresh.to_string());
+    let (new_acess_token, new_raw_refresh, set_cookies) = revoke_rotate_token(stored, &user, &state).await?;
 
     Ok(ApiResponse::new_with_cookies(
         set_cookies[0].clone(),

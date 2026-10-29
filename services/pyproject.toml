@@ -13,6 +13,20 @@ dependencies = [
     "python-dotenv>=1.2.3",
     "scrapy>=2.18.0",
     "scrapy-playwright>=0.0.48",
+    "sentence-transformers>=6.2.0",   
+    "torch>=2.14.1",                  
     "tortoise-orm>=1.1.8",
     "uvicorn>=0.54.0",
+]
+
+# NEW: where CPU-only PyTorch lives
+[[tool.uv.index]]
+name = "pytorch-cpu"                                  # a name we refer to below
+url = "https://download.pytorch.org/whl/cpu"          # PyTorch's CPU-only package server
+explicit = true                                       # only use this index for packages we point at it, nothing else
+
+# NEW: tell uv which package to take from that index
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", marker = "sys_platform != 'darwin'" },  # PyTorch publishes no CPU build for macOS, so skip it there
 ]

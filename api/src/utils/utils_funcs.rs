@@ -91,28 +91,48 @@ pub async fn get_stored_token(hashed:&str, db:&DatabaseConnection)->Result<token
     Ok(stored)
 }
 
+pub async fn generate_set_tokens(state:&web::Data<AppState>, user:&users::Model, id:i64)->Result<(String, String, Vec<Cookie<'static>>), ApiError>{
+    let raw_refresh = generate_refresh_token();
+    let hashed = hash_refresh_token(raw_refresh.clone());
+
+    let token = match issue_jwt(&user, state) {
+        Ok(t) => t,
+        Err(_) => String::new()
+        
+    };
+
+    let refresh_model = tokens::ActiveModel {
+        id: Default::default(),
+        user_id: Set(id),
+        token: Set(token.clone()),
+        hash_token: Set(hashed.clone()),
+        expired_at: Set(Utc::now() + Duration::days(1)),
+        revoked: Set(false),
+        created_at: Set(Utc::now()),
+        ..Default::default()
+    };
+
+    refresh_model.insert(&state.db).await?;
+
+    let set_cookie: Vec<Cookie<'_>> = set_cookies(token.to_string(), raw_refresh.to_string());
+    Ok((raw_refresh, token, set_cookie))
+
+}
+
 pub async fn revoke_rotate_token(
     stored:tokens::Model, 
     user:&users::Model,
     state:&web::Data<AppState>
-)->Result<(String, String), ApiError>{
+)->Result<(String, String, Vec<Cookie<'static>>), ApiError>{
+    let user_id = stored.user_id;
     let mut active: tokens::ActiveModel = stored.into();
     
-    let new_acess_token = match issue_jwt(&user, &state) {
-        Ok(t) => t,
-        Err(_) => String::new(),
-    };
-
-    let new_raw_refresh = generate_refresh_token();
-    let new_hashed = hash_refresh_token(new_raw_refresh.clone());
-    
-    active.token = Set(new_acess_token.clone());
-    active.hash_token = Set(new_hashed.clone());
-    active.revoked = Set(false);
+    active.revoked = Set(true);
     active.update(&state.db).await?;
-    
-    Ok((new_acess_token, new_raw_refresh))
 
+    let (new_acess_token, new_raw_refresh, set_cookie) = generate_set_tokens(state, user, user_id).await?;
+    
+    Ok((new_acess_token, new_raw_refresh, set_cookie))
 }
 
 pub async fn extract_refresh_token(request:HttpRequest, jbody:Option<String>)-> Option<String> {
@@ -229,34 +249,6 @@ pub async fn extract_tokens_db(db:&DatabaseConnection, user_id:i64)->Result<Stri
     Ok(acess_token)    
 }
 
-pub async fn generate_set_tokens(state:&web::Data<AppState>, user:&users::Model, id:i64)->Result<(String, String, Vec<Cookie<'static>>), ApiError>{
-    let raw_refresh = generate_refresh_token();
-    let hashed = hash_refresh_token(raw_refresh.clone());
-
-    let token = match issue_jwt(&user, state) {
-        Ok(t) => t,
-        Err(_) => String::new()
-        
-    };
-
-    let refresh_model = tokens::ActiveModel {
-        id: Default::default(),
-        user_id: Set(id),
-        token: Set(token.clone()),
-        hash_token: Set(hashed.clone()),
-        expired_at: Set(Utc::now() + Duration::days(1)),
-        revoked: Set(false),
-        created_at: Set(Utc::now()),
-        ..Default::default()
-    };
-
-    refresh_model.insert(&state.db).await?;
-
-    let set_cookie: Vec<Cookie<'_>> = set_cookies(token.to_string(), raw_refresh.to_string());
-    Ok((raw_refresh, token, set_cookie))
-
-}
-
 pub async fn save_user_history(db:&DatabaseConnection, phrase: String, identity:&Identity) -> Result<Value, ApiError>{
     match &identity {
         Identity::User(user) => {
@@ -342,12 +334,12 @@ pub async fn make_request<T: DeserializeOwned + std::fmt::Debug>(
                 .json(&request_body)
                 .send()
                 .await
-                .map_err(|e| ApiError::NotFound(format!("[External API request failed] ERROR: {}", e)))?  
+                .map_err(|e| ApiError::ServiceUnavailable(format!("[External API request failed] ERROR: {}", e)))?  
         },
         _ => return Err(ApiError::NotFound(format!("Unsupported HTTP method: {}", method))),
     };
     if !response.status().is_success() {
-        return Err(ApiError::NotFound(format!(
+        return Err(ApiError::ServiceUnavailable(format!(
             "[External API returned non-success status] STATUS: {}",
             response.status()
         )));
@@ -356,10 +348,12 @@ pub async fn make_request<T: DeserializeOwned + std::fmt::Debug>(
     let api_response: T = response
         .json()
         .await
-        .map_err(|e| ApiError::NotFound(format!("[failed to parse API response json] ERROR: {}", e)))?;
+        .map_err(|e| ApiError::ServiceUnavailable(format!("[failed to parse API response json] ERROR: {}", e)))?;
     log::info!("response {:?}", api_response);
     Ok(api_response)
 
 }
+
+
 
 

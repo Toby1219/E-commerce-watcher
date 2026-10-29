@@ -30,7 +30,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MODEL = SentenceTransformer("BAAI/bge-base-en-v1.5")
+NAME = "BAAI/bge-base-en-v1.5"
+try:
+    MODEL = SentenceTransformer(NAME, local_files_only=True)
+except:
+    MODEL = SentenceTransformer(NAME)
+    
 SCRAPER_DIR = Path(__file__).parent
 SCRAPER_SCRIPT = SCRAPER_DIR / "main.py"
 COOLDOWN = 3600
