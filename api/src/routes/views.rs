@@ -573,7 +573,7 @@ async fn del_history_handler(state:web::Data<AppState>, payload:web::Json<BHOQue
     ),
     tag="Tools"
 )]
-#[get("/currency-converstion")]
+#[get("/currency-conversion")]
 async fn currencies_converstion(state:web::Data<AppState>, payload:web::Query<CurrencyQuery>, request:HttpRequest)->Result<HttpResponse, ApiError>{
     let payload = payload.into_inner();
     let conversion = Converstions::from_str(&payload.converstion_type)?;

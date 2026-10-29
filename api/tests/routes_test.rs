@@ -351,7 +351,7 @@ async fn test_currency_success(){
     let app = build_test_app().await;
 
     let request_otb = test::TestRequest::get()
-        .uri("/api/currency-converstion?ammount=2500&from=NGN&converstion_type=OTB")
+        .uri("/api/currency-conversion?ammount=2500&from=NGN&converstion_type=OTB")
         .peer_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
         .to_request();
     let response_otb = test::call_service(&app, request_otb).await;
@@ -359,7 +359,7 @@ async fn test_currency_success(){
     assert_eq!(response_otb_status, StatusCode::OK);
 
     let request_oto = test::TestRequest::get()
-        .uri("/api/currency-converstion?ammount=2500&from=NGN&to=GBP&converstion_type=OTO")
+        .uri("/api/currency-conversion?ammount=2500&from=NGN&to=GBP&converstion_type=OTO")
         .peer_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
         .to_request();
     let response_oto = test::call_service(&app, request_oto).await;

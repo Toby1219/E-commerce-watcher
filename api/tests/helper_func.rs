@@ -151,7 +151,7 @@ impl TestSuitPyServer {
             .expect("Failed to start FastAPI server from external directory. Check .venv path.");
 
         let start = Instant::now();
-        let timeout = Duration::from_secs(10);
+        let timeout = Duration::from_secs(30);
         let health_url = "http://127.0.0.1:8000/health";
 
         let client = Client::builder()
