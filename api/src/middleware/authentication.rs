@@ -42,7 +42,7 @@ pub async fn check_auth_middleware(
 }
 
 fn unauthorized_response(req: ServiceRequest) -> ServiceResponse<BoxBody> {
-    let response = ApiResponse::<()>::new(401, "invalid or missing token", ());
+    let response = ApiResponse::<()>::new(401, "invalid, missing or expired token", ());
     let (req_parts, _) = req.into_parts();
     ServiceResponse::new(req_parts, response).map_into_boxed_body()
 }

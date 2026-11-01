@@ -162,7 +162,7 @@ async fn refresh_token(
     };
     
     //revoke and rotate token
-    let (new_acess_token, new_raw_refresh, set_cookies) = revoke_rotate_token(stored, &user, &state).await?;
+    let (new_raw_refresh,  new_acess_token, set_cookies) = revoke_rotate_token(stored, &user, &state).await?;
 
     Ok(ApiResponse::new_with_cookies(
         set_cookies[0].clone(),

@@ -4,9 +4,8 @@
 /services/crawlers/.scrapy
 services/crawlers/.env
 
-.env
 *.env
-
+help.txt
 /api/migration/target
 /api/target
 /api/.env

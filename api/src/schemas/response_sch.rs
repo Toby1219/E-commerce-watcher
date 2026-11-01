@@ -69,7 +69,10 @@ pub enum ApiError {
     ServiceUnavailable(String),
 
     #[error("Validation Failed: {0}")]
-    ValidationError(String)
+    ValidationError(String),
+
+    #[error("Duplicate Entery {0}")]
+    Duplicate(String)
 }
 
 impl<T: Serialize> ApiResponse<T> {
@@ -115,7 +118,8 @@ impl ResponseError for ApiError {
             ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             ApiError::SeverError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error: {Server Error}".to_string()),
             ApiError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.to_string()),
-            ApiError::ValidationError(msg) => (StatusCode::BAD_REQUEST, msg.clone())
+            ApiError::ValidationError(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            ApiError::Duplicate(msg) => (StatusCode::CONFLICT, msg.clone())
         };
         ApiResponse::new(status.as_u16(), message, ())
     }

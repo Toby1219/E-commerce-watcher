@@ -91,8 +91,8 @@ pub struct ProductQuery{
 
 #[derive(Deserialize, Serialize, ToSchema, IntoParams)]
 pub struct ProductIdQuery{
-    /// n = product name
-    #[param(example="laptop")]
+    /// n = product id
+    #[param(example=1)]
     pub n: u64
 }
 

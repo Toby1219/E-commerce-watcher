@@ -130,9 +130,9 @@ pub async fn revoke_rotate_token(
     active.revoked = Set(true);
     active.update(&state.db).await?;
 
-    let (new_acess_token, new_raw_refresh, set_cookie) = generate_set_tokens(state, user, user_id).await?;
+    let (new_raw_refresh, new_acess_token, set_cookie) = generate_set_tokens(state, user, user_id).await?;
     
-    Ok((new_acess_token, new_raw_refresh, set_cookie))
+    Ok((new_raw_refresh, new_acess_token, set_cookie))
 }
 
 pub async fn extract_refresh_token(request:HttpRequest, jbody:Option<String>)-> Option<String> {

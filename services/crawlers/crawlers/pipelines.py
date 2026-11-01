@@ -54,9 +54,9 @@ class TortoiseDBPipeline:
         )
 
         if not created:
-            product.product_price = adapter.get("product_price"),
-            product.product_price_text = adapter.get("product_price_text"),
-            product.product_currency = adapter.get("product_currency"),
+            product.product_price = adapter.get("product_price")
+            product.product_price_text = adapter.get("product_price_text")
+            product.product_currency = adapter.get("product_currency")
             product.product_details = adapter.get("product_details", {})
             product.product_reviews = adapter.get("product_reviews", {})
             product.product_specifications = adapter.get("product_specifications", {})

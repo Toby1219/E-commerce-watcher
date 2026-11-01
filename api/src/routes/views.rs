@@ -292,14 +292,15 @@ async fn single_product(state:web::Data<AppState>, query:web::Query<ProductIdQue
     tag="Bookmarks (protected)"
 )]
 #[get("/bookmark")]
-async fn get_bookmark_handler(state:web::Data<AppState>, user: AuthenticatedUser)->Result<HttpResponse, ApiError>{
-    // let id_ = extract_user_ip(&request).await;
-    // let cached_key = CacheReqResp::key_for(format!("{}:book_mark",&current_user_email).as_ref(), &id_);
-    // if let Some(cached_data) = state.redis.get::<BookmarkSchema>(&cached_key).await {
-    //     return Ok(ApiResponse::new(200, "Bookmark data from cache".to_string(), cached_data));
-    // }
+async fn get_bookmark_handler(state:web::Data<AppState>, user: AuthenticatedUser, request:HttpRequest)->Result<HttpResponse, ApiError>{
+    let id_ = extract_user_ip(&request).await;
+
+    let cached_key = CacheReqResp::key_for(format!("{}:book_mark",&user.email).as_ref(), &id_);
+    if let Some(cached_data) = state.redis.get::<BookmarkSchema>(&cached_key).await {
+        return Ok(ApiResponse::new(200, "Bookmark data from cache".to_string(), cached_data));
+    }
     let bookmarks = extract_bookmarks(user.user_id, &state.db).await?;
-    // let _ = state.redis.set(&cached_key, &bookmarks, 120).await;
+    let _ = state.redis.set(&cached_key, &bookmarks, 1).await;
     Ok(ApiResponse::new(200, "User Bookmark".to_string(), bookmarks))
 }
 
@@ -315,7 +316,24 @@ async fn get_bookmark_handler(state:web::Data<AppState>, user: AuthenticatedUser
 async fn bookmark_handler(state:web::Data<AppState>, payload:web::Json<BHOQuery>, user_auth:AuthenticatedUser)->Result<HttpResponse, ApiError>{
     let payload = payload.into_inner();
     let user = extract_user(&state.db, user_auth.email).await?;
+    
+    let condition = Condition::all()
+        .add(bookmark::Column::UserId.eq(user.id))
+        .add(bookmark::Column::ProductId.eq(payload.product_id));
+
+    match Bookmark::find()
+        .filter(condition)
+        .one(&state.db)
+        .await
+        .map_err(|e| ApiError::DatabaseError(e))?
+        {
+            Some(_) => return  Err(ApiError::Duplicate(format!("Product already exist for user {}", user.username))),
+            None => ()
+        };
+
     let product = extract_product(&payload, &state.db).await?;
+
+
     
     let book_mark = bookmark::ActiveModel {
         id: Default::default(),
@@ -378,7 +396,7 @@ async fn del_bookmark_handler(state:web::Data<AppState>, payload:web::Json<BHOQu
             Some(b) => b,
             None => return  Err(ApiError::NotFound("Book mark data not found".to_string()))
         };
-    let book_id = book_mark.id;
+    let book_id = book_mark.product_id;
     
     let del_book = book_mark.delete(&state.db).await?;
     let bookmarks = extract_bookmarks(user.id, &state.db).await?;
@@ -416,7 +434,7 @@ async fn get_history_handler(state:web::Data<AppState>, user_auth: OptionalUser,
             }
 
             let history = extract_history(Some(user.sub), None, &state.db).await?;
-            let _ = state.redis.set(&cached_key, &history, 120).await;
+            let _ = state.redis.set(&cached_key, &history, 1).await;
 
             Ok(ApiResponse::new(200, "User history".to_string(), history))
         },
@@ -429,7 +447,7 @@ async fn get_history_handler(state:web::Data<AppState>, user_auth: OptionalUser,
             }
             
             let history = extract_history(None, Some(annon_user), &state.db).await?;
-            let _ = state.redis.set(&cached_key, &history, 2).await;
+            let _ = state.redis.set(&cached_key, &history, 1).await;
 
             let mut response = ApiResponse::new(200, "User history".to_string(), history);
             if let Some(c) = new_cookie {
@@ -454,12 +472,27 @@ async fn history_handler(state:web::Data<AppState>, payload:web::Json<BHOQuery>,
     let payload = payload.into_inner();
 
     let phrase_wrd = payload.phrase.ok_or(ApiError::ValidationError("No phrase is sent".to_string()))?;
-    let u_h = save_user_history(&state.db, phrase_wrd, &identity).await?;
 
-    match identity {
+    match identity.clone() {
         Identity::User(user_claim) => {
             let user = extract_user(&state.db, user_claim.email).await?;
+            
+            let condition = Condition::all()
+                .add(history::Column::UserId.eq(user_claim.sub))
+                .add(history::Column::Phrase.eq(phrase_wrd.clone()));
 
+            match History::find()
+                .filter(condition)
+                .one(&state.db)
+                .await
+                .map_err(|e| ApiError::DatabaseError(e))?
+                {
+                    Some(_) => return Err(ApiError::Duplicate(format!("History data already exist"))),
+                    None => ()
+                };
+            
+            let u_h = save_user_history(&state.db, phrase_wrd, &identity).await?;
+            
             Ok(ApiResponse::new(
                 201, 
                 format!("Created History for user {}", user.username),
@@ -467,6 +500,22 @@ async fn history_handler(state:web::Data<AppState>, payload:web::Json<BHOQuery>,
             ))
         },
         Identity::AnonUser(annon_user) => {
+            let condition = Condition::all()
+                .add(history::Column::AnonUser.eq(annon_user.clone()))
+                .add(history::Column::Phrase.eq(phrase_wrd.clone()));
+
+            match History::find()
+                .filter(condition)
+                .one(&state.db)
+                .await
+                .map_err(|e| ApiError::DatabaseError(e))?
+                {
+                    Some(_) => return Err(ApiError::Duplicate(format!("History data already exist"))),
+                    None => ()
+                };
+            
+            let u_h = save_user_history(&state.db, phrase_wrd, &identity).await?;
+            
             let mut response = ApiResponse::new(
                 201, 
                 format!("Created History for user {}", annon_user),
@@ -635,16 +684,18 @@ async fn currencies_converstion(state:web::Data<AppState>, payload:web::Query<Cu
 // routes to count orders (When user click a product link comunicate with api before redirecting to the website)
 #[utoipa::path(
     description = "When user clicks a product URL to visit the original product page user order count increased",
-    params(BHOQuery),
     responses(
         (status=200, description="Product Order Count enter product id to record order counts then check user information to see changes", body=ApiResponse<Value>),
         CommonErrors
     ),
     tag="Tools"
 )]
-#[get("/order")]
-async fn user_orders(state:web::Data<AppState>, payload:web::Query<BHOQuery>, user_auth:AuthenticatedUser)->Result<HttpResponse, ApiError> {
+#[post("/order")]
+async fn user_orders(state:web::Data<AppState>, payload:web::Json<BHOQuery>, user_auth:AuthenticatedUser)->Result<HttpResponse, ApiError> {
     let payload = payload.into_inner();
+    if payload.product_id.is_none() {
+        return Err(ApiError::NotFound("Product id not found".to_string()));
+    }
     let user = extract_user(&state.db, user_auth.email).await?;
     let products = extract_product(&payload, &state.db).await?;
     let mut mod_user:users::ActiveModel = user.into();
@@ -664,22 +715,54 @@ async fn user_orders(state:web::Data<AppState>, payload:web::Query<BHOQuery>, us
 // to calculate product scores
 #[utoipa::path(
     description = "when product is clicked on when api data is integrated to a web ui product hit count is increased and used when updating product data",
-    params(BHOQuery),
     responses(
         (status=200, description="Score Product", body=ApiResponse<Value>),
         CommonErrors
     ),
     tag="Tools"
 )]
-#[get("/hit")]
-async fn product_score(state:web::Data<AppState>, payload:web::Query<BHOQuery>)->Result<HttpResponse, ApiError>{
+#[post("/hit")]
+async fn product_score(state:web::Data<AppState>, payload:web::Json<BHOQuery>, user_auth:OptionalUser, req: HttpRequest)->Result<HttpResponse, ApiError>{
+    let (identity, new_cookie) = get_user_identity(user_auth, &req).await;
     let payload = payload.into_inner();
-    let products = extract_product(&payload, &state.db).await?;
-    let mut mod_product:products::ActiveModel = products.clone().into();
-    let score = mod_product.score.clone().unwrap() + 1;
-    mod_product.score = Set(score);
-    mod_product.update(&state.db).await?;
-    Ok(ApiResponse::new(200, format!("Scored product {}", products.product_name), ()))
+    if payload.product_id.is_none() {
+        return Err(ApiError::NotFound("Product id not found".to_string()));
+    }
+    let ip = extract_user_ip(&req).await;
+    match identity {
+        Identity::User(user)=> {
+            let cached_key = CacheReqResp::key_for(format!("{:?}<->{}", payload.product_id.unwrap(), user.email).as_ref(), &ip);
+            if let Some(cached_data) = state.redis.get::<()>(&cached_key).await {
+                return Ok(ApiResponse::new(200, format!("Products from cached data"), cached_data));
+            }
+            let products = extract_product(&payload, &state.db).await?;
+            let mut mod_product:products::ActiveModel = products.clone().into();
+            let score = mod_product.score.clone().unwrap() + 1;
+            mod_product.score = Set(score);
+            mod_product.update(&state.db).await?;
+            let response = ApiResponse::new(200, format!("Scored product {}", products.product_name), ());
+            let _ = state.redis.set(&cached_key, &(), 120).await;
+            Ok(response)
+        },
+        Identity::AnonUser(anon_user)=>{
+            let cached_key = CacheReqResp::key_for(format!("{:?} <-> {}", payload.product_id, anon_user).as_ref(), &ip);
+            if let Some(cached_data) = state.redis.get::<()>(&cached_key).await {
+                return Ok(ApiResponse::new(200, format!("Products from cached data"), cached_data));
+            }
+            let products = extract_product(&payload, &state.db).await?;
+            let mut mod_product:products::ActiveModel = products.clone().into();
+            let score = mod_product.score.clone().unwrap() + 1;
+            mod_product.score = Set(score);
+            mod_product.update(&state.db).await?;
+            let mut response = ApiResponse::new(200, format!("Scored product {}", products.product_name), ());
+            let _ = state.redis.set(&cached_key, &(), 120).await;
+            if let Some(c) = new_cookie {
+                let _ = response.add_cookie(&c);
+            };
+            Ok(response)
+        } 
+    }
+
 
 }
 

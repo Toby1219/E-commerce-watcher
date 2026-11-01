@@ -56,6 +56,7 @@ async fn main()-> std::io::Result<()>{
                 header::AUTHORIZATION,
                 header::ACCEPT,
                 header::CONTENT_TYPE,
+                header::HeaderName::from_static("x-refresh-token"),
             ])
             .supports_credentials()
             .max_age(3600);
