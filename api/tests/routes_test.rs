@@ -5,18 +5,13 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use serde_json::json;
 use crate::helper_func::*;
 
-//-----------------------------------------------------
-// HELPER FUNCTION FOR TEST CASES
-//-----------------------------------------------------
-
-
 
 //-----------------------------------------------------
 // SUCCESS REQUEST TEST CASES
 //-----------------------------------------------------
 #[actix_web::test]
 async fn test_register_user_success(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
     
     let username = unique_test_username();
     let email = unique_test_email();
@@ -42,7 +37,7 @@ async fn test_register_user_success(){
 
 #[actix_web::test]
 async fn test_login_user_success(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let username = unique_test_username();
     let email = unique_test_email();
@@ -84,7 +79,7 @@ async fn test_login_user_success(){
 
 #[actix_web::test]
 async fn test_refresh_token_json(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (tokens_data, _) = login_and_get_token(&app).await;
 
@@ -108,7 +103,7 @@ async fn test_refresh_token_json(){
 
 #[actix_web::test]
 async fn test_refresh_token_headers(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (tokens_data, _) = login_and_get_token(&app).await;
     let refresh_str = tokens_data["refresh"]
@@ -128,7 +123,7 @@ async fn test_refresh_token_headers(){
 
 #[actix_web::test]
 async fn test_refresh_token_cookies(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (_, refresh_cookie) = login_and_get_token(&app).await;
 
@@ -162,7 +157,7 @@ async fn test_refresh_token_cookies(){
 
 #[actix_web::test]
 async fn test_logout_success(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (tokens_data, _) = login_and_get_token(&app).await;
     
@@ -188,7 +183,7 @@ async fn test_logout_success(){
 // views routes test
 #[actix_web::test]
 async fn test_getuser_success(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (tokens_data, _) = login_and_get_token(&app).await;
     let token_str = tokens_data["token"]
@@ -209,7 +204,7 @@ async fn test_getuser_success(){
 
 #[actix_web::test]
 async fn test_multiple_product_success(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let url = "/api/products?p_n=hp%20laptop&s_t=id&p=1&p_p=10".to_string();
     let request = test::TestRequest::get()
@@ -223,7 +218,7 @@ async fn test_multiple_product_success(){
 
 #[actix_web::test]
 async fn test_single_product_success(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let url = format!("/api/product?n={}", 10);
     let request = test::TestRequest::get()
@@ -237,7 +232,7 @@ async fn test_single_product_success(){
 
 #[actix_web::test]
 async fn test_bookmark_success(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (tokens_data, _) = login_and_get_token(&app).await;
     let token_str = tokens_data["token"]
@@ -258,7 +253,7 @@ async fn test_bookmark_success(){
 
 #[actix_web::test]
 async fn test_history_success(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (tokens_data, _) = login_and_get_token(&app).await;
     let token_str = tokens_data["token"]
@@ -279,7 +274,7 @@ async fn test_history_success(){
 
 #[actix_web::test]
 async fn test_del_bookmark_success(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (tokens_data, _) = login_and_get_token(&app).await;
 
@@ -313,7 +308,7 @@ async fn test_del_bookmark_success(){
 
 #[actix_web::test]
 async fn test_del_history_success(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (tokens_data, _) = login_and_get_token(&app).await;
     let token_str = tokens_data["token"]
@@ -347,7 +342,7 @@ async fn test_del_history_success(){
 
 #[actix_web::test]
 async fn test_currency_success(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let request_otb = test::TestRequest::get()
         .uri("/api/currency-conversion?ammount=2500&from=NGN&converstion_type=OTB")
@@ -368,7 +363,7 @@ async fn test_currency_success(){
 
 #[actix_web::test]
 async fn test_user_order(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (tokens_data, _) = login_and_get_token(&app).await;
     let token_str = tokens_data["token"]
@@ -388,7 +383,7 @@ async fn test_user_order(){
 
 #[actix_web::test]
 async fn test_prod_hit(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let req = test::TestRequest::get()
         .uri("/api/hit?product_id=1")
@@ -402,8 +397,8 @@ async fn test_prod_hit(){
 // search handler test 
 #[actix_web::test]
 async fn test_search(){
+    let (app, _) = build_test_app().await;
     let _ = TestSuitPyServer::new().await;
-    let app = build_test_app().await;
 
     let req = test::TestRequest::get()
         .uri("/api/search?query=laptop")
@@ -422,7 +417,7 @@ async fn test_search(){
 //-----------------------------------------------------
 #[actix_web::test]
 async fn test_getuser_failed(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let request = test::TestRequest::get()
         .uri("/user/me")
@@ -436,7 +431,7 @@ async fn test_getuser_failed(){
 
 #[actix_web::test]
 async fn test_multiple_product_failed(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let url = "/api/products?p_n=&s_t=id&p=1&p_p=10".to_string();
     let request = test::TestRequest::get()
@@ -451,7 +446,7 @@ async fn test_multiple_product_failed(){
 
 #[actix_web::test]
 async fn test_single_product_failed(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let url = "/api/product?n=999999999".to_string();
     let request = test::TestRequest::get()
@@ -465,7 +460,7 @@ async fn test_single_product_failed(){
 
 #[actix_web::test]
 async fn test_bookmark_failed(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (tokens_data, _) = login_and_get_token(&app).await;
     let token_str = tokens_data["token"]
@@ -486,7 +481,7 @@ async fn test_bookmark_failed(){
 
 #[actix_web::test]
 async fn test_del_bookmark_failed(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (tokens_data, _) = login_and_get_token(&app).await;
     let token_str = tokens_data["token"]
@@ -507,7 +502,7 @@ async fn test_del_bookmark_failed(){
 
 #[actix_web::test]
 async fn test_del_histroy_failed(){
-    let app = build_test_app().await;
+    let (app, _) = build_test_app().await;
 
     let (tokens_data, _) = login_and_get_token(&app).await;
     let token_str = tokens_data["token"]

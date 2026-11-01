@@ -1,10 +1,10 @@
 use std::{
-    process::{Child, Command}, 
-    time::{Duration, Instant},
-    env
+    process::{Child, Command, Stdio}, 
+    time::{Duration},
+    env,
+    path::PathBuf,
 };
 use reqwest::Client;
-use std::path::PathBuf;
 use actix_web::{
     App, body::MessageBody, cookie::Cookie, dev::{Service, ServiceResponse}, http::StatusCode, test, web
 };
@@ -18,10 +18,9 @@ use utoipa_actix_web::AppExt;
 
 use api::middleware::redis_cache::CacheReqResp;
 use api::schemas::others::{AppEnvConfig, AppState, ApiDoc};
-use api::utils::db::connect_db;
+use api::utils::{db::connect_db};
 use api::middleware::limiter::RoutesLimiter;
 use api::routes::{auth::config_auth_routes, views::config_views_routes};
-
 
 static TEST_USER_COUNTER:AtomicU32 = AtomicU32::new(0);
 
@@ -35,11 +34,14 @@ pub fn unique_test_username() -> String {
     format!("testuser_{}_{}", std::process::id(), n)
 }
 
-pub async fn build_test_app() -> impl Service<
-    actix_http::Request,
-    Response = ServiceResponse<impl MessageBody>,
-    Error = actix_web::Error,
-> {
+pub async fn build_test_app() -> 
+    (impl Service<
+        actix_http::Request,
+        Response = ServiceResponse<impl MessageBody>,
+        Error = actix_web::Error,
+    >,
+    web::Data<AppState>)
+ {
     dotenvy::dotenv().ok();
 
     let config_envapp = AppEnvConfig::from_env().unwrap();
@@ -63,7 +65,7 @@ pub async fn build_test_app() -> impl Service<
             .configure(|cfg| config_views_routes(cfg, limiter.view_route.clone()))
             .split_for_parts();
 
-    test::init_service(app).await
+    (test::init_service(app).await, state)
 }
 
 pub async fn login_and_get_token<S, B>(app: &S) -> (Value, Cookie<'_>)
@@ -113,94 +115,78 @@ where
 
 #[derive(Debug)]
 pub struct TestSuitPyServer{
-    pub child: Child
+    pub child: Child,
 }
 
-impl TestSuitPyServer {
-    pub async fn new()-> Self{
+impl TestSuitPyServer { 
+    pub async fn new()-> Self {
         let base_dir = if let Ok(custom_root) = env::var("APP_ROOT") {
-            // for docker path
             PathBuf::from(custom_root)
         } else {
-            let home = env::var("HOME").expect("HOME environment variable not set");
-            PathBuf::from(home).join("Documents/ewatch")
+            let home = env::var("HOME").expect("HOME environment variable not set"); // need HOME
+            PathBuf::from(home).join("Documents/ewatch") // default local path
         };
-        let python_project_dir = base_dir.join("services/crawlers");
-        let venv_python_path = base_dir.join("services/.venv/bin/python");
+        let python_project_dir = base_dir.join("services/crawlers"); 
+        // let venv_python_path = base_dir.join("services/.venv/bin/python");
 
-        assert!(
-            venv_python_path.exists(),
-            "Python interpreter not found: {}",
-            venv_python_path.display()
-        );
+        // assert!(venv_python_path.exists(), "Python not found: {}", venv_python_path.display());
+        assert!(python_project_dir.exists(), "Dir not found: {}", python_project_dir.display());
 
-        assert!(
-            python_project_dir.exists(),
-            "Python project directory not found: {}",
-            python_project_dir.display()
-        );
-
-        eprintln!("Starting Python embedding service...");
-        eprintln!("Python: {}", venv_python_path.display());
-        eprintln!("Working directory: {}", python_project_dir.display());
-
-        let mut child = Command::new(venv_python_path)
-            .args(["-m", "uvicorn", "api:app", "--host", "127.0.0.1", "--port", "8000"])
-            .current_dir(python_project_dir)
+        let mut child = Command::new("uv")
+            .args([
+                "run", 
+                "uvicorn", 
+                "api:app", 
+                "--host", "127.0.0.1", 
+                "--port", "8000"
+            ]) 
+            .current_dir(&python_project_dir)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .spawn()
-            .expect("Failed to start FastAPI server from external directory. Check .venv path.");
-
-        let start = Instant::now();
-        let timeout = Duration::from_secs(30);
-        let health_url = "http://127.0.0.1:8000/health";
+            .expect("Failed to start Python API");
 
         let client = Client::builder()
             .timeout(Duration::from_secs(2))
             .build()
             .expect("Failed to create HTTP client");
 
-        loop {
+        let mut ready = false;
 
-            match child.try_wait() {
-                Ok(Some(status)) => panic!("Python service exited during startup: {status}"),
-                Ok(None) => {},
-                Err(err) => panic!("Failed to check Python process: {:?}", err),
+        for _ in 0..60 {
+            if let Ok(Some(status)) = child.try_wait() {
+                panic!("Python API exited during startup: {status}");
             }
 
-            if start.elapsed() > timeout {
-                let _ = child.kill();
-                let _ = child.wait();
-                panic!("Python embedding service did not become ready within {:?}", timeout);
+            match client.get("http://127.0.0.1:8000/health").send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    ready = true;
+                    break;
+                }
+                _ => {}
             }
 
-            match client.get(health_url).send().await {
-                Ok(response) if response.status().is_success() => {
-                    eprintln!(
-                        "Python embedding service is ready after {:?}",
-                        start.elapsed()
-                    );
-
-                    return Self {child};
-                }
-                Ok(response) => {
-                    eprintln!(
-                        "Health check returned HTTP {}",
-                        response.status()
-                    );
-                }
-                Err(error) => {
-                    eprintln!("Waiting for Python service: {error}");
-                }
-            }
-
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
+
+        if !ready {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("Python API failed to start within 60s");
+        }
+        assert!(ready, "Python API failed to start within 60s");
+
+        Self { child }
+
     }
+
 }
 
-impl Drop for TestSuitPyServer{
-    fn drop(&mut self){
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+
+
+impl Drop for TestSuitPyServer {
+    fn drop(&mut self) {
+        let _ = self.child.kill(); // stop uvicorn when the test ends or panics
+        let _ = self.child.wait(); // reap the process
     }
 }
