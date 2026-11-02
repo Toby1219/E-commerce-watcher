@@ -24,7 +24,7 @@ A product-search backend for e-commerce listings. A **Python/Scrapy** crawler co
 | Embedding backfill worker | Working |
 | Scrape trigger (API → FastAPI → Scrapy) | Fires correctly |
 | Automatic FX refresh (24 h worker) | Working |
-| Tests | 23 integration tests (need live Postgres + Redis); refresh test does not check the token fields |
+| Tests | 23 integration tests |
 | Docker / CI | Not yet |
 
 ## Tech stack
