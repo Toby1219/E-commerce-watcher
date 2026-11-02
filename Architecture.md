@@ -1,7 +1,5 @@
 # Architecture
 
-Verified against the source code (not by running it). Items marked *(inferred)* were deduced from structure. The endpoint reference is [api/README.md](api/README.md).
-
 ## 1. Runtime components
 
 | Component | Tech | Role |
