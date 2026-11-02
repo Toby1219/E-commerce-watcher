@@ -84,7 +84,7 @@ async def run_currency_scraper():
     try:
         async with scrape_slots:
             proc = await asyncio.create_subprocess_exec(
-                sys.executable, "-m", "scrapy", "crawl", "curency_api", cwd=SCRAPER_DIR
+                sys.executable, "-m", "scrapy", "crawl", "currency_api", cwd=SCRAPER_DIR
             )
             try:
                 await asyncio.wait_for(proc.wait(), timeout=3000)

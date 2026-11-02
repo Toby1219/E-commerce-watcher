@@ -83,7 +83,7 @@ Returns `200` with `UserSchema` including `token` (JWT) and `refresh_token`; als
 
 Security scheme: `refresh_token` (cookie). The refresh token is read from, in order: cookie `refresh_token`, header `X-Refresh-Token`, JSON body `{"refresh_token": "..."}`.
 
-Returns `200` with `{"token": "<new jwt>", "refresh_token": "<new refresh>"}` and new cookies. The old refresh token stops working. Missing token → `404`; unknown/revoked/expired → `401`. A session's refresh window ends 1 day after login: refreshing does not extend it.
+Returns `200` with `{"token": "<new jwt>", "refresh_token": "<new refresh>"}` and new cookies. The old refresh token stops working. Missing token → `404`; unknown/revoked/expired → `401`. Each refresh revokes the old session row and creates a new one that is valid for 1 day, so refreshing extends the session. Known bug: the JSON body currently has `token` and `refresh_token` swapped (the cookies are correct), see issue #3 in `docs/KNOWN_ISSUES.md`.
 
 ### `POST /auth/user/update` (JWT)
 
@@ -123,8 +123,8 @@ Returns one `ProductsSchema` or `404 "Product not found"`. Cached 120 s.
 
 How it works:
 
-1. The query is embedded and the `limit` nearest products (by cosine distance) are fetched.
-2. Those rows are filtered: every word of the query (stopwords `a an the for of and or in with to` ignored) must appear as a whole word in the product name.
+1. The query is embedded and the 200 nearest products (or `limit`, if larger) by cosine distance are taken as candidates.
+2. Candidates are filtered in SQL: every word of the query (stopwords `a an the for of and or in with to` ignored) must appear as a whole word in the product name. The first `limit` survivors are returned.
 3. The remaining hits are returned nearest first:
 
 ```json
@@ -135,7 +135,7 @@ How it works:
 }
 ```
 
-- Fewer than `limit` hits (or none) is normal, because the filter only sees the `limit` nearest rows.
+- Fewer than `limit` hits (or none) is normal, because the name filter only sees the nearest candidates.
 - With no hits the body is `[]`, the message is *"No close matches for [ q ] yet. We're fetching products, check back in a minute."* and a scrape is requested. Empty results are not cached; non-empty ones are cached for 120 s per caller.
 - Only products that already have an embedding are searchable.
 - Side effect: the query is saved to the caller's history.
@@ -143,7 +143,7 @@ How it works:
 
 ### `GET /api/hit?product_id=<id>`
 
-Increments the product's `score` by 1. No authentication. Returns `200` with an empty body. Unknown id → `404`.
+Increments the product's `score` by 1. No authentication (anyone can call it, see issue #4). Returns `200` with an empty body. Unknown id → `404`.
 
 ### `GET /api/user/order?product_id=<id>` (JWT)
 

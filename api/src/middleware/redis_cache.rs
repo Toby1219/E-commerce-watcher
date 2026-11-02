@@ -1,4 +1,5 @@
 use redis::{AsyncCommands, aio::ConnectionManager};
+use sea_orm::DatabaseExecutor::Connection;
 use serde::{Serialize, de::DeserializeOwned};
 
 #[derive(Clone)]
@@ -32,6 +33,18 @@ impl CacheReqResp {
         let payload = serde_json::to_string(value)?;
         conn.set_ex::<_, _, ()>(key, payload, ttl_secs).await?;
         Ok(())
+    }
+
+    pub async fn set_if_absent(&self, key: &str, ttl_secs: u64) -> anyhow::Result<bool>{
+        let mut conn = self.conn.clone();
+        let res: Option<String> = redis::cmd("SET")
+            .arg(key)
+            .arg(1)
+            .arg("NX")
+            .arg("EX")
+            .query_async(&mut conn)
+            .await?;
+        Ok(res.is_some())
     }
 
     // Build cache key

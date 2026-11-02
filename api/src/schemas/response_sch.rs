@@ -113,6 +113,9 @@ impl ResponseError for ApiError {
                 errors::ErrorKind::ExpiredSignature => {
                     (StatusCode::UNAUTHORIZED, "Token Expired".to_string())
                 },
+                errors::ErrorKind::InvalidIssuer => {
+                    (StatusCode::UNAUTHORIZED, "Invalid user".to_string())
+                },
                 _ => (StatusCode::UNAUTHORIZED, "Invalid Token".to_string())
             }
             ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),

@@ -1,4 +1,5 @@
 use sea_orm::*;
+use std::time::Duration as Dura;
 use chrono::{Utc, Duration};
 use actix_web::{HttpRequest, web};
 use serde::de::DeserializeOwned;
@@ -97,7 +98,7 @@ pub async fn generate_set_tokens(state:&web::Data<AppState>, user:&users::Model,
 
     let token = match issue_jwt(&user, state) {
         Ok(t) => t,
-        Err(_) => String::new()
+        Err(e) => return Err(ApiError::JwtErr(e))
         
     };
 
@@ -312,7 +313,11 @@ pub async fn make_request<T: DeserializeOwned + std::fmt::Debug>(
     host: String,
     method: String
 )->Result<T, ApiError> {
-    let client = Client::new();
+    let client = Client::builder()
+    .timeout(Dura::from_secs(5))
+    .build()
+    .expect("Failed to create HTTP client");
+
     let url = format!("{}/{}", host, url_path);
 
     let request_body = match query {

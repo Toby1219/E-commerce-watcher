@@ -1,8 +1,12 @@
 use std::str::FromStr;
+use std::cmp::Ord;
 use actix_web::middleware::from_fn;
 use actix_web::{HttpRequest, HttpResponse, get, post, web};
-use sea_orm::{Statement, DbBackend, prelude::PgVector};
-use sea_orm::{ActiveModelTrait, ColumnTrait, Condition, EntityTrait, FromQueryResult, ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, Set};
+use sea_orm::{Statement, DbBackend, prelude::PgVector, 
+    ActiveModelTrait, ColumnTrait, Condition, 
+    EntityTrait, FromQueryResult, 
+    ModelTrait, PaginatorTrait, QueryFilter, 
+    QueryOrder, Set, sea_query::Expr};
 use serde_json::{json, Value};
 use actix_governor::{Governor};
 use chrono::{Utc};
@@ -623,16 +627,16 @@ async fn del_history_handler(state:web::Data<AppState>, payload:web::Json<BHOQue
     tag="Tools"
 )]
 #[get("/currency-conversion")]
-async fn currencies_converstion(state:web::Data<AppState>, payload:web::Query<CurrencyQuery>, request:HttpRequest)->Result<HttpResponse, ApiError>{
+async fn currencies_conversion(state:web::Data<AppState>, payload:web::Query<CurrencyQuery>, request:HttpRequest)->Result<HttpResponse, ApiError>{
     let payload = payload.into_inner();
-    let conversion = Converstions::from_str(&payload.converstion_type)?;
+    let conversion = Converstions::from_str(&payload.conversion_type)?;
     let id_ = extract_user_ip(&request).await;
     let to_value = match &payload.to{
         Some(v) => v.to_string(),
         None => format!("USD")
     };
 
-    let cached_key = CacheReqResp::key_for(format!("{} - {} - {} - {}", payload.ammount, payload.converstion_type, payload.from, to_value).as_ref(), &id_);
+    let cached_key = CacheReqResp::key_for(format!("{} - {} - {} - {}", payload.amount, payload.conversion_type, payload.from, to_value).as_ref(), &id_);
     if let Some(cached_data) = state.redis.get::<Value>(&cached_key).await {
         return Ok(ApiResponse::new(200, format!("Currency convention from cached data"), cached_data));
     }
@@ -662,10 +666,10 @@ async fn currencies_converstion(state:web::Data<AppState>, payload:web::Query<Cu
         _ => None,  
     };
 
-    let result = conversion.convert(payload.ammount, rate_one, rate_two)?;
+    let result = conversion.convert(payload.amount, rate_one, rate_two)?;
 
     let results_json = serde_json::json!({
-        "amount": payload.ammount,
+        "amount": payload.amount,
         "from": &payload.from,
         "to": to_value,
         "converted": result,
@@ -723,46 +727,36 @@ async fn user_orders(state:web::Data<AppState>, payload:web::Json<BHOQuery>, use
 )]
 #[post("/hit")]
 async fn product_score(state:web::Data<AppState>, payload:web::Json<BHOQuery>, user_auth:OptionalUser, req: HttpRequest)->Result<HttpResponse, ApiError>{
-    let (identity, new_cookie) = get_user_identity(user_auth, &req).await;
     let payload = payload.into_inner();
-    if payload.product_id.is_none() {
-        return Err(ApiError::NotFound("Product id not found".to_string()));
-    }
+    let product_id = payload.product_id
+        .ok_or_else(|| ApiError::NotFound("Product id not found".to_string()))?;
+
     let ip = extract_user_ip(&req).await;
-    match identity {
-        Identity::User(user)=> {
-            let cached_key = CacheReqResp::key_for(format!("{:?}<->{}", payload.product_id.unwrap(), user.email).as_ref(), &ip);
-            if let Some(cached_data) = state.redis.get::<()>(&cached_key).await {
-                return Ok(ApiResponse::new(200, format!("Products from cached data"), cached_data));
-            }
-            let products = extract_product(&payload, &state.db).await?;
-            let mut mod_product:products::ActiveModel = products.clone().into();
-            let score = mod_product.score.clone().unwrap() + 1;
-            mod_product.score = Set(score);
-            mod_product.update(&state.db).await?;
-            let response = ApiResponse::new(200, format!("Scored product {}", products.product_name), ());
-            let _ = state.redis.set(&cached_key, &(), 120).await;
-            Ok(response)
-        },
-        Identity::AnonUser(anon_user)=>{
-            let cached_key = CacheReqResp::key_for(format!("{:?} <-> {}", payload.product_id, anon_user).as_ref(), &ip);
-            if let Some(cached_data) = state.redis.get::<()>(&cached_key).await {
-                return Ok(ApiResponse::new(200, format!("Products from cached data"), cached_data));
-            }
-            let products = extract_product(&payload, &state.db).await?;
-            let mut mod_product:products::ActiveModel = products.clone().into();
-            let score = mod_product.score.clone().unwrap() + 1;
-            mod_product.score = Set(score);
-            mod_product.update(&state.db).await?;
-            let mut response = ApiResponse::new(200, format!("Scored product {}", products.product_name), ());
-            let _ = state.redis.set(&cached_key, &(), 120).await;
-            if let Some(c) = new_cookie {
-                let _ = response.add_cookie(&c);
-            };
-            Ok(response)
-        } 
+    let product = extract_product(&payload, &state.db).await?;
+
+    let who = match user_auth.0 {
+        Some(claims) => format!("user:{}:{}", claims.sub, ip),
+        None => format!("ip{}", ip),
+    };
+    let key = format!("api:v1:hit:{}:{}", product_id, who);
+    let first_time = state.redis.set_if_absent(&key, 3600)
+        .await
+        .unwrap_or(false);
+    if !first_time {
+        return Ok(ApiResponse::new(200, "Hit already counted", ()));
     }
 
+    Products::update_many()
+        .col_expr(
+            products::Column::Score, 
+            sea_orm::sea_query::ExprTrait::add(
+                Expr::col(products::Column::Score), 1)
+            )
+        .filter(products::Column::Id.eq(product_id))
+        .exec(&state.db)
+        .await?;
+    
+    Ok(ApiResponse::new(200, format!("Scored product {}", product.product_name), ()))
 
 }
 
@@ -872,7 +866,7 @@ pub fn config_views_routes(cfg: &mut ServiceConfig, ratelimiter:DefaultGovernorC
         .service(health_check)
         .service(multiple_product)
         .service(single_product)
-        .service(currencies_converstion)
+        .service(currencies_conversion)
         .service(search_product)
         .service(history_handler)
         .service(del_history_handler)

@@ -9,14 +9,12 @@ Python 3.12 project managed with [uv](https://docs.astral.sh/uv/). It contains t
 
 ```bash
 cd services                                                            # project root (pyproject.toml, requirements.txt)
-uv venv                                                                # create .venv
-source .venv/bin/activate                                              # activate it (Windows: .venv\Scripts\activate)
-uv pip install torch --index-url https://download.pytorch.org/whl/cpu  # CPU-only PyTorch, as in ../help.text
-uv pip install -r requirements.txt                                     # pinned deps incl. sentence-transformers (this combination is untested)
+uv sync                                                                # install from uv.lock; pyproject.toml routes torch to the CPU-only index
+source .venv/bin/activate                                              # activate the venv uv created (Windows: .venv\Scripts\activate)
 cd crawlers                                                            # all commands below run from here
 ```
 
-`requirements.txt` pins `torch==2.14.1+cpu`, a build that only the PyTorch CPU index provides, and `pyproject.toml` does not list `sentence-transformers` or `torch`. That's why the steps above use `uv pip install` rather than `uv sync` (a plain `uv sync` would not install them).
+`pyproject.toml` lists `torch` and `sentence-transformers` and sends `torch` to the CPU-only PyTorch index (not on macOS), so `uv sync` is the intended install path. `requirements.txt` is a pinned export for `uv pip install -r` workflows.
 
 Create `services/crawlers/.env`:
 
@@ -26,7 +24,7 @@ Create `services/crawlers/.env`:
 | `DB_HOST` | `localhost` | host |
 | `DB_PORT` | `5433` | port |
 | `DB_NAME` | `e_watchdb` | database (same one the Rust API uses) |
-| `CURENCY_API_URL` | none | full exchangerate-api URL for USD rates, including your API key (`https://v6.exchangerate-api.com/v6/<API_KEY>/latest/USD`). Spelled `CURENCY` in the code |
+| `CURRENCY_API_URL` | none | full exchangerate-api URL for USD rates, including your API key (`https://v6.exchangerate-api.com/v6/<API_KEY>/latest/USD`). |
 | `ORIGINS` | none | allowed CORS origin for the FastAPI app, e.g. `http://127.0.0.1:8181`. The value is passed to the CORS middleware as is |
 
 The tables must already exist: create them with the Rust migrations in `api/migration`.
@@ -64,7 +62,7 @@ Run any spider from `services/crawlers`.
 | Spider (`scrapy crawl <name>`) | File | What it does | Writes to |
 |---|---|---|---|
 | `crawl001` | `spiders/spider001.py` | Jumia Nigeria. Requests search pages **1–4** for `search_key`, keeps listings whose name contains every search word, then scrapes each product page: price, summary, spec tables, features, reviews, brand, category, SKU, image | `products` via `TortoiseDBPipeline` |
-| `curency_api` | `spiders/curency_api.py` | Fetches USD-based exchange rates from the URL in `CURENCY_API_URL`, one item per currency | `currencies` via `CurrencyItemsPipeline` |
+| `curency_api` | `spiders/curency_api.py` | Fetches USD-based exchange rates from the URL in `CURRENCY_API_URL`, one item per currency | `currencies` via `CurrencyItemsPipeline` |
 | `spider002` | `spiders/spider002.py` | Experiment: opens ebay.com with Playwright, searches, and yields the result count. Needs Chrome at `/usr/bin/google-chrome` and runs non-headless | nothing (no pipeline) |
 
 ```bash
@@ -76,11 +74,11 @@ scrapy crawl curency_api              # refresh exchange rates
 
 ### What the product spider yields
 
-For each product: `product_url`, `product_name`, `product_brand`, `product_category`, `product_image`, `product_price` (a `Decimal` parsed from the price text; for a price range such as `₦ 1,000 - ₦ 2,000` it takes the part before the `-`), `product_price_text` (the raw text), `product_currency` (always `₦`), `product_details`, `product_specifications`, `product_reviews` and `score` (always `0`).
+For each product: `product_url`, `product_name`, `product_brand`, `product_category`, `product_image`, `product_price` (a `Decimal` parsed from the price text; for a price range such as `₦ 1,000 - ₦ 2,000` it takes the part before the `-`), `product_price_text` (the raw text), `product_currency` (always `₦`), `product_details`, `product_specifications`, and `product_reviews`. `score` is not yielded; the pipeline sets it to `0` on create.
 
 ## Pipelines (`crawlers/pipelines.py`)
 
-- **`TortoiseDBPipeline`**: opens a Tortoise ORM pool, then `get_or_create` on `product_url`. For an existing product it overwrites price, price text, currency, details, reviews, specifications and `score`. Product names have `+` removed.
+- **`TortoiseDBPipeline`**: opens a Tortoise ORM pool, then `get_or_create` on `product_url`. Known bug (issue #1): the create path omits the NOT NULL price fields and the update path assigns 1-tuples because of trailing commas, so no product is saved yet. The intended update refreshes price, price text, currency, details, reviews and specifications. Product names have `+` removed.
 - **`CurrencyItemsPipeline`**: `update_or_create` on `(base_currency, currency)`.
 
 ## Database models (`crawlers/db/models.py`)

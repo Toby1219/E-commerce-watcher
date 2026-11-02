@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::utils::utils_funcs::make_request;
 use crate::schemas::others::{StatusApiResponse};
 
-pub fn run_curency_spider(host: String) {
+pub fn run_currency_spider(host: String) {
     tokio::spawn(async move {
         let idle = Duration::from_hours(24);
         let retry = Duration::from_secs(60);

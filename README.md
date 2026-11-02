@@ -1,41 +1,43 @@
 # E-commerce Watcher
 
-A product-catalog API for e-commerce listings. A Python crawler scrapes products (currently **Jumia Nigeria**) into PostgreSQL, and a Rust (actix-web) API serves them with pagination, **semantic search** (pgvector), currency conversion, user accounts, bookmarks and search history.
+A product-search backend for e-commerce listings. A **Python/Scrapy** crawler collects products (currently **Jumia Nigeria**) into **PostgreSQL**, and a **Rust (actix-web)** API serves them with **semantic search (pgvector)**, currency conversion, user accounts, bookmarks and search history.
 
-## Features
+> **Why it's built this way:** the embedding model and Scrapy are Python-native, while the public API is Rust for speed and type safety. The two talk over HTTP and share one Postgres database.
 
-- **Catalog API**: paginated, case-insensitive product-name search with sorting.
-- **Semantic search**: the query is embedded with `BAAI/bge-base-en-v1.5` (768-dim) and ranked by cosine distance in Postgres (`pgvector`, HNSW index). Results are then filtered so every query word appears in the product name.
-- **On-demand scraping**: searching a term with no matches triggers a background Scrapy crawl for it.
-- **Auth**: register/login, short-lived JWT access tokens (20 min) plus rotating refresh tokens, sent as `HttpOnly` cookies *or* `Authorization: Bearer`.
-- **User data**: bookmarks, search history (works for anonymous visitors via an `anon_id` cookie), order-click counter, product "hit" score.
-- **Currency conversion**: rates (USD base) are scraped from exchangerate-api and stored in the DB, so amounts can be converted to a preferred currency. A background worker asks the Python service to refresh the rates every 24 hours.
-- **Prices**: each product stores a numeric `product_price`, the original `product_price_text` (e.g. `₦ 109,990`) and a `product_currency` symbol.
-- **Ops basics**: Redis response cache, per-IP rate limiting, CORS, Swagger UI, and background workers (token cleanup, history cleanup, embedding backfill, currency refresh).
-- **Consistent responses**: every success and every error uses the same `{status_code, message, body}` envelope.
+<!-- TODO: add a screenshot or GIF of Swagger UI / the React frontend here -->
 
-## Repository layout
+## Highlights
 
-```
-.
-├── api/                      # Rust workspace (Cargo.toml at this level)
-│   ├── src/                  # actix-web app: routes, middleware, schemas, utils, tasks
-│   ├── entities/             # SeaORM entities (users, products, history, bookmark, tokens, currencies)
-│   ├── migration/            # SeaORM migrations (+ CLI binary)
-│   └── tests/routes_test.rs  # integration tests (need live Postgres + Redis)
-├── services/                 # Python project (uv)
-│   ├── crawlers/
-│   │   ├── api.py            # FastAPI: text embedder, product-scrape trigger, currency-scrape trigger
-│   │   ├── main.py           # CLI entry to run the product spider
-│   │   └── crawlers/         # Scrapy project: spiders, pipelines, Tortoise ORM models
-│   ├── pyproject.toml
-│   └── requirements.txt
-├── help.text                 # how to install CPU-only PyTorch + sentence-transformers
-├── Architecture.md           # components, flows, data model, code map
-└── docs/API.md               # endpoint reference
-```
+- **Hybrid search**: query embedded with `BAAI/bge-base-en-v1.5` (768-dim), ranked by cosine distance in `pgvector` (HNSW index), then filtered so every query word appears in the product name.
+- **Lazy catalog building**: a search with no matches triggers a background Scrapy crawl for that term, so the catalog grows from real user searches.
+- **Auth done properly**: Argon2 password hashing, 20-min JWT access tokens stored server-side (so logout revokes instantly), refresh tokens stored only as SHA-256 hashes, cookies (`HttpOnly`) or `Authorization: Bearer`.
+- **Anonymous + signed-in history**: visitors get an `anon_id` cookie; history is cleaned up by a background worker after 72 h.
+- **Production-style plumbing**: Redis response cache, per-IP rate limiting (`actix-governor`), CORS, OpenAPI/Swagger UI (`utoipa`), four background workers, one `{status_code, message, body}` envelope for every response and error.
+- **Currency conversion**: USD-based rates scraped from exchangerate-api and stored in the DB.
 
-## How the pieces fit
+## Status
+
+| Area | State |
+|------|-------|
+| Product search (`/api/products`), semantic search (`/api/search`) | Working |
+| Auth, bookmarks, history, currency conversion | Working |
+| Embedding backfill worker | Working |
+| Scrape trigger (API → FastAPI → Scrapy) | Fires correctly, but **no new product is saved**: pipeline bug, see [Known issues](docs/KNOWN_ISSUES.md) #1 |
+| Automatic FX refresh (24 h worker) | Code looks correct; needs a valid `CURRENCY_API_URL` (issue #2) |
+| Tests | 23 integration tests (need live Postgres + Redis); refresh test does not check the token fields |
+| Docker / CI | Not yet |
+
+## Tech stack
+
+| Layer | Tech |
+|-------|------|
+| API | Rust, actix-web 4, SeaORM 2, utoipa 6, actix-governor |
+| Embedder + scrape trigger | Python 3.12, FastAPI, sentence-transformers |
+| Crawlers | Scrapy, scrapy-playwright, Tortoise ORM |
+| Data | PostgreSQL + pgvector, Redis |
+| Tooling | uv, SeaORM migrations |
+
+## Architecture at a glance
 
 ```
  Browser / client
@@ -57,109 +59,110 @@ A product-catalog API for e-commerce listings. A Python crawler scrapes products
  └────────────────────────┘
 ```
 
-Details: [`Architecture.md`](Architecture.md). Endpoint reference: [`docs/API.md`](docs/API.md). Crawler service: [`services/README.md`](services/README.md).
+Full detail: [Architecture.md](Architecture.md) · Endpoint reference: [api/README.md](api/README.md) · Crawler service: [services/README.md](services/README.md) · Known problems: [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)
+
+## Repository layout
+
+```
+.
+├── api/                      # Rust workspace (Cargo.toml here)
+│   ├── README.md             # endpoint reference
+│   ├── src/                  # routes, middleware, schemas, utils, background tasks
+│   ├── entities/             # SeaORM entities
+│   ├── migration/            # SeaORM migrations (+ CLI binary)
+│   └── tests/routes_test.rs  # integration tests (need live Postgres + Redis)
+├── services/                 # Python project (uv)
+│   └── crawlers/             # FastAPI app, Scrapy project, Tortoise models
+├── help.text                 # CPU-only PyTorch + sentence-transformers install notes
+├── Architecture.md
+└── docs/KNOWN_ISSUES.md
+```
 
 ## Prerequisites
 
 | Tool | Why |
-|---|---|
-| Recent stable **Rust** (edition 2024; the code uses `Duration::from_hours`) | build the API |
-| **PostgreSQL** with the **pgvector** extension | data + vector search |
+|------|-----|
+| Recent stable **Rust** (edition 2024) | build the API |
+| **PostgreSQL** with **pgvector** | data + vector search |
 | **Redis** | response cache |
-| **Python ≥ 3.12** and [**uv**](https://docs.astral.sh/uv/) | crawler + embedder service |
+| **Python ≥ 3.12** and [uv](https://docs.astral.sh/uv/) | crawler + embedder service |
 
 ## Configuration
 
-Both services read a `.env` file. **Do not commit real values.**
+Both services read a `.env` file. **Never commit real values.**
 
 **`api/.env`**
 
 | Variable | Required | Meaning |
-|---|---|---|
+|----------|----------|---------|
 | `BIND_ADDRESS` | yes | interface to listen on, e.g. `127.0.0.1` |
 | `PORT_NUMBER` | yes | port to listen on |
-| `DATABASE_URL` | yes | Postgres URL (`postgres://user:pass@host:port/db`) |
-| `REDIS_URL` | yes | Redis URL (`redis://host:port`) |
+| `DATABASE_URL` | yes | `postgres://user:pass@host:port/db` |
+| `REDIS_URL` | yes | `redis://host:port` |
 | `SECRET_KEY` | yes | HMAC secret used to sign JWTs |
-| `CORS_ORIGIN` | yes | allowed browser origin (`http://localhost:5173` and `http://127.0.0.1:5173` are always allowed too) |
-| `PY_API_HOST` | yes | base URL of the Python service, **no trailing slash**, e.g. `http://127.0.0.1:8000` |
-| `RUST_LOG` | no | log verbosity. Set `info` to see worker logs; if unset, `env_logger` only shows errors |
+| `CORS_ORIGIN` | yes | allowed browser origin (`http://localhost:5173` and `http://127.0.0.1:5173` are always allowed) |
+| `PY_API_HOST` | yes | Python service base URL, **no trailing slash**, e.g. `http://127.0.0.1:8000` |
+| `RUST_LOG` | no | set `info` to see worker logs (unset = errors only) |
 
 **`services/crawlers/.env`**
 
 | Variable | Default | Meaning |
-|---|---|---|
+|----------|---------|---------|
 | `DB_USER`, `DB_PASSWORD` | none | Postgres credentials |
 | `DB_HOST` | `localhost` | Postgres host |
-| `DB_PORT` | `5433` | Postgres port (note: not the usual 5432) |
-| `DB_NAME` | `e_watchdb` | database name; must be the same DB the API uses |
-| `CURRENCY_API_URL` | none | full exchangerate-api URL for USD rates, including your API key: `https://v6.exchangerate-api.com/v6/<API_KEY>/latest/USD`. The variable name is spelled `CURENCY` in the code |
-| `ORIGINS` | none | allowed CORS origin(s) for the Python app, e.g. `http://127.0.0.1:8181` |
+| `DB_PORT` | `5433` | Postgres port (not the usual 5432) |
+| `DB_NAME` | `e_watchdb` | must be the same DB the API uses |
+| `CURRENCY_API_URL` | none | exchangerate-api URL incl. your key: `https://v6.exchangerate-api.com/v6/<API_KEY>/latest/USD` |
+| `ORIGINS` | none | allowed CORS origin(s) for the Python app |
 
 ## Quick start
 
 ```bash
 # 1) Database ---------------------------------------------------------------
 createdb e_watchdb                                          # create the database (name matches the crawler default)
-psql e_watchdb -c "CREATE EXTENSION IF NOT EXISTS vector;"  # install pgvector first: the first migration already creates a vector column
+psql e_watchdb -c "CREATE EXTENSION IF NOT EXISTS vector;"  # enable pgvector BEFORE migrating: migration 1 creates a vector column
 
 # 2) Python embedder / scraper service --------------------------------------
-cd services                                                 # Python project root (pyproject.toml, requirements.txt)
-uv venv                                                     # create .venv
-source .venv/bin/activate                                   # activate it (Windows: .venv\Scripts\activate)
-uv pip install torch --index-url https://download.pytorch.org/whl/cpu   # CPU-only PyTorch, as in help.text
-uv pip install -r requirements.txt                          # pinned dependencies (includes sentence-transformers); this exact combination is untested
-cd crawlers                                                 # uvicorn must run here so `api:app` and main.py resolve
+cd services                                                 # Python project root
+uv sync                                                     # install everything from uv.lock (pyproject.toml routes torch to the CPU-only index)
+source .venv/bin/activate                                   # activate the venv uv created (Windows: .venv\Scripts\activate)
+cd crawlers                                                 # uvicorn must run here so `api:app` resolves
 python -c "from sentence_transformers import SentenceTransformer as S; S('BAAI/bge-base-en-v1.5')"  # one-time model download (api.py later forces offline mode)
 uvicorn api:app --port 8000                                 # must match PY_API_HOST in api/.env
 
 # 3) Rust API (new terminal) ------------------------------------------------
 cd api                                                      # Cargo workspace root
-cargo run -p migration -- up                                # apply the 4 SeaORM migrations using DATABASE_URL
-cargo run                                                   # start API; also spawns the background workers
+cargo run -p migration -- up                                # apply the SeaORM migrations using DATABASE_URL
+cargo run                                                   # start the API and its background workers
 
-# 4) Seed data ---------------------------------------------------------------
-cd ../services/crawlers                                     # back to the Scrapy project
-scrapy crawl curency_api                                    # load exchange rates now (spider name is spelled "curency_api")
-python main.py --search "hp laptop"                         # scrape Jumia for a term (or just search via the API)
+# 4) Seed data (new terminal) -----------------------------------------------
+cd services/crawlers                                        # back to the Scrapy project
+scrapy crawl curency_api                                    # load FX rates now (spider name is misspelled "curency_api")
+python main.py --search "hp laptop"                         # scrape Jumia for a term
 ```
 
-Then open **Swagger UI** at `http://<BIND_ADDRESS>:<PORT_NUMBER>/swagger-ui/index.html` (OpenAPI JSON at `/api-docs/openapi.json`). It has two auth schemes: `bearer_auth` (JWT) and `refresh_token` (cookie, used on `/auth/refresh`).
+Then open **Swagger UI** at `http://<BIND_ADDRESS>:<PORT_NUMBER>/swagger-ui/index.html` (OpenAPI JSON at `/api-docs/openapi.json`). Auth schemes: `bearer_auth` (JWT) and `refresh_token` (cookie, used on `/auth/refresh`).
 
-## Quick usage
+## Try it
 
 ```bash
-BASE=http://127.0.0.1:8181                                   # replace with your BIND_ADDRESS:PORT_NUMBER
+BASE=http://127.0.0.1:8181                                   # replace with BIND_ADDRESS:PORT_NUMBER
 
 curl "$BASE/api/health"                                      # liveness check
-curl "$BASE/api/products?p_n=laptop&p=1&p_p=10&s_t=id"       # paginated name search (empty result triggers a scrape)
-curl "$BASE/api/search?query=hp%20laptop&limit=5"            # semantic search, filtered to names containing every query word
-curl "$BASE/api/currency-converstion?ammount=2500&from=NGN&converstion_type=OTB"  # NGN -> USD (path is spelled "converstion")
+curl "$BASE/api/products?p_n=laptop&p=1&p_p=10&s_t=id"       # paginated name search
+curl "$BASE/api/search?query=hp%20laptop&limit=5"            # semantic search, filtered by name
+curl "$BASE/api/currency-conversion?ammount=2500&from=NGN&converstion_type=OTB"  # NGN -> USD (query params are still misspelled, issue #9)
 
-# Register, log in, and call a protected route (needs jq to extract the token)
 curl -X POST "$BASE/auth/register" -H "Content-Type: application/json" \
-  -d '{"email":"me@example.com","username":"me","password_text":"a-long-password"}'   # create the account (email format, username >= 3, password >= 8 are validated)
+  -d '{"email":"me@example.com","username":"me","password_text":"a-long-password"}'   # create an account
 TOKEN=$(curl -s -X POST "$BASE/auth/login" -H "Content-Type: application/json" \
-  -d '{"email":"me@example.com","password_text":"a-long-password"}' | jq -r .body.token)  # log in and capture the JWT
-curl "$BASE/api/user/me" -H "Authorization: Bearer $TOKEN"   # protected route using the Bearer header
+  -d '{"email":"me@example.com","password_text":"a-long-password"}' | jq -r .body.token)  # log in, capture the JWT (needs jq)
+curl "$BASE/api/user/me" -H "Authorization: Bearer $TOKEN"   # call a protected route
 ```
 
 ## Tests
 
 ```bash
 cd api            # Cargo workspace root
-cargo test        # integration tests in api/tests/routes_test.rs
+cargo test        # runs api/tests/routes_test.rs
 ```
-
-The tests build the real app against the Postgres and Redis in `.env`, and assume seeded data (a product with id `10`, and `NGN`, `GBP` and `USD` rows in `currencies`). `test_search_success` is an empty stub.
-
-## Docker 
-
-```bash
- # Docker commands
-```
-
-## Current limitations
-
-- Only one live source (Jumia NG). `spider002` (eBay) is an experiment that doesn't store anything yet.
-- No Docker/compose files or CI config yet. (coming soon ... )

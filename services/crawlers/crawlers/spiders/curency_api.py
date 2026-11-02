@@ -9,7 +9,7 @@ load_dotenv()
 CURRENCY_API_URL = os.getenv("CURRENCY_API_URL")
 
 class CurencyApiSpider(scrapy.Spider):
-    name = "curency_api"
+    name = "currency_api"
 
     custom_settings = {
         "ITEM_PIPELINES": {

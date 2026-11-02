@@ -128,16 +128,16 @@ impl FromStr for Converstions {
 
 impl Converstions {
     pub fn convert(self, 
-        ammount:Decimal, 
+        amount:Decimal, 
         rate_one:Decimal, 
         rate_two:Option<Decimal>
     )->Result<Decimal, ApiError> {
         match self {
-            Self::OthersToBase => Ok(ammount / rate_one),
+            Self::OthersToBase => Ok(amount / rate_one),
             Self::OthersToOthers => {
                 let rate_two = rate_two
                     .ok_or_else(|| ApiError::NotFound("currency_two is required for OTO".to_string()))?;
-                Ok(ammount * rate_two / rate_one)   
+                Ok(amount * rate_two / rate_one)   
             }
         }
     }
@@ -147,7 +147,7 @@ impl Converstions {
 pub struct CurrencyQuery{
     /// Money you want to convert
     #[param(example=1000, value_type = f64)]
-    pub ammount: Decimal,
+    pub amount: Decimal,
 
     /// Other currency 
     #[param(example="NGN")]
@@ -161,7 +161,7 @@ pub struct CurrencyQuery{
     /// Others To Base (Defult: USD) (OTB)
     /// Others To Others (OTO)
     #[param(example="OTB")]
-    pub converstion_type:String
+    pub conversion_type:String
 }
 
 
