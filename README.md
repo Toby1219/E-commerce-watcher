@@ -59,7 +59,7 @@ A product-search backend for e-commerce listings. A **Python/Scrapy** crawler co
  └────────────────────────┘
 ```
 
-Full detail: [Architecture.md](Architecture.md) · Endpoint reference: [api/README.md](api/README.md) · Crawler service: [services/README.md](services/README.md) · Known problems: [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)
+Full detail: [Architecture.md](Architecture.md) · Endpoint reference: [api/README.md](api/README.md) · Crawler service: [services/README.md](services/README.md)
 
 ## Repository layout
 
