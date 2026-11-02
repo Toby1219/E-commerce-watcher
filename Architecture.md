@@ -26,7 +26,7 @@ Both the Rust crate and the Python Tortoise models use the **same Postgres datab
 5. `TortoiseDBPipeline` upserts by `product_url` (insert, or update price/details/reviews/specs/score).
 6. New rows have `embedding = NULL` until the backfill worker fills them (2.3).
 
-> **Status:** steps 1-4 work as described. Step 5 fails for every new product because the pipeline never supplies the NOT NULL price fields, so nothing is saved ([issue #1](docs/KNOWN_ISSUES.md)). `/api/search` triggers the same scrape when it finds no hits.
+> **Status:** steps 1-4 work as described. `/api/search` triggers the same scrape when it finds no hits.
 
 ### 2.2 Semantic search
 
