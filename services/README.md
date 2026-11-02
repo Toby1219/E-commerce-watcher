@@ -78,7 +78,7 @@ For each product: `product_url`, `product_name`, `product_brand`, `product_categ
 
 ## Pipelines (`crawlers/pipelines.py`)
 
-- **`TortoiseDBPipeline`**: opens a Tortoise ORM pool, then `get_or_create` on `product_url`. Known bug (issue #1): the create path omits the NOT NULL price fields and the update path assigns 1-tuples because of trailing commas, so no product is saved yet. The intended update refreshes price, price text, currency, details, reviews and specifications. Product names have `+` removed.
+- **`TortoiseDBPipeline`**: opens a Tortoise ORM pool, then `get_or_create` on `product_url`. 
 - **`CurrencyItemsPipeline`**: `update_or_create` on `(base_currency, currency)`.
 
 ## Database models (`crawlers/db/models.py`)
