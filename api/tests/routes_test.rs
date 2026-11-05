@@ -370,8 +370,9 @@ async fn test_user_order(){
         .as_str()
         .expect("access token was not a string");
 
-    let req = test::TestRequest::get()
-        .uri("/api/user/order?product_id=1")
+    let req = test::TestRequest::post()
+        .uri("/api/user/order")
+        .set_json(json!({"product_id":1}))
         .peer_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
         .insert_header(("Authorization", format!("Bearer {}", token_str)))
         .to_request();
@@ -385,8 +386,9 @@ async fn test_user_order(){
 async fn test_prod_hit(){
     let (app, _) = build_test_app().await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/hit?product_id=1")
+    let req = test::TestRequest::post()
+        .uri("/api/hit")
+        .set_json(json!({"product_id":1}))
         .peer_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
         .to_request();
 

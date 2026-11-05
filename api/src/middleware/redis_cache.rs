@@ -1,5 +1,4 @@
 use redis::{AsyncCommands, aio::ConnectionManager};
-use sea_orm::DatabaseExecutor::Connection;
 use serde::{Serialize, de::DeserializeOwned};
 
 #[derive(Clone)]
@@ -35,7 +34,7 @@ impl CacheReqResp {
         Ok(())
     }
 
-    pub async fn set_if_absent(&self, key: &str, ttl_secs: u64) -> anyhow::Result<bool>{
+    pub async fn set_if_absent(&self, key: &str, _ttl_secs: u64) -> anyhow::Result<bool>{
         let mut conn = self.conn.clone();
         let res: Option<String> = redis::cmd("SET")
             .arg(key)

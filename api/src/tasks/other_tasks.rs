@@ -16,11 +16,11 @@ pub fn run_currency_spider(host: String) {
                 "get".to_string()
             ).await {
                 Ok(r) => {
-                    log::info!("API resonse: {:?}", r.status); 
+                    log::info!("API response: {:?}", r.status); 
                     idle
                 },
                 Err(e) => {
-                    log::info!("API resonse error: {:?}", e);
+                    log::info!("API response error: {:?}", e);
                     retry
                 }
             };

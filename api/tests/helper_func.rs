@@ -182,8 +182,6 @@ impl TestSuitPyServer {
 
 }
 
-
-
 impl Drop for TestSuitPyServer {
     fn drop(&mut self) {
         let _ = self.child.kill(); // stop uvicorn when the test ends or panics
