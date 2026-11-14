@@ -8,8 +8,8 @@ import { useDeleteBookmark } from "../utils/mutations/useDeleteData";
 // Shape of one bookmarked product, as returned by the API.
 // ----------------------------------------------------------------------------
 interface BookmarkedProduct {
-  id: number;          // bookmark row id — used to target the DELETE request
-  productId: string;   // the product itself — used to link to /product/:id
+  id: number; // bookmark row id — used to target the DELETE request
+  productId: string; // the product itself — used to link to /product/:id
   name: string;
   price: string;
   rating: string;
@@ -19,27 +19,29 @@ interface BookmarkedProduct {
 
 export default function BookmarksPage() {
   const navigate = useNavigate();
-  const { data:bookmarkData, isLoading, error } = useBookmark();
+  const { data: bookmarkData } = useBookmark();
   const deleteBookmark = useDeleteBookmark();
   const [bookmarks, setBookmarks] = useState<BookmarkedProduct[] | null>(null);
   const [removingId, setRemovingId] = useState<number | null>(null);
 
-
   useEffect(() => {
-    // if (!isLoading || !bookmarkData) return;
-    let bookmark_data = bookmarkData?.products.map(
-      (rows)=>({
-        "id": rows.id,
-        "productId": rows.product_sku,
-        "name": rows.product_name,
-        "price": rows.product_price,
-        "rating": rows.product_reviews.total_stars,
-        "reviewCount": rows.product_reviews.total_reviews,
-        "productImgUrl": rows.product_image,
-      })
-    ) ?? [];
-    setBookmarks(bookmark_data);
-    console.log(bookmarkData?.products);
+    const updateBookmark = () => {
+      const bookmark_data =
+        bookmarkData?.products.map((rows) => ({
+          id: rows.id,
+          productId: rows.product_sku,
+          name: rows.product_name,
+          price: rows.product_price,
+          rating: rows.product_reviews.total_stars,
+          reviewCount: rows.product_reviews.total_reviews,
+          productImgUrl: rows.product_image,
+        })) ?? [];
+      setBookmarks(bookmark_data);
+    };
+    if (bookmarkData) {
+      setTimeout(updateBookmark, 0);
+    }
+    // console.log(bookmarkData?.products);
   }, [bookmarkData]);
 
   const handleRemove = (bookmarkId: number) => {
@@ -61,7 +63,9 @@ export default function BookmarksPage() {
 
         <h1 className="font-serif text-3xl mb-1">Your bookmarks</h1>
         <p className="text-[#8A8272] text-sm mb-8">
-          {bookmarks === null ? "Loading…" : `${bookmarks.length} saved products`}
+          {bookmarks === null
+            ? "Loading…"
+            : `${bookmarks.length} saved products`}
         </p>
 
         {/* -------- loading state -------- */}
@@ -74,7 +78,10 @@ export default function BookmarksPage() {
           <div className="text-center py-16 border border-[#3A362F] rounded-lg">
             <Bookmark size={28} className="text-[#4A4638] mx-auto mb-3" />
             <p className="text-[#8A8272] text-sm">No bookmarks yet.</p>
-            <Link to="/" className="text-sm text-[#FF6B4A] hover:underline mt-2 inline-block">
+            <Link
+              to="/"
+              className="text-sm text-[#FF6B4A] hover:underline mt-2 inline-block"
+            >
               Browse products
             </Link>
           </div>
@@ -88,15 +95,15 @@ export default function BookmarksPage() {
                 key={b.id}
                 className={`flex items-center gap-4 bg-[#1D1B19] border border-[#3A362F] rounded-lg p-4 transition-opacity
                   ${removingId === b.id ? "opacity-40" : "opacity-100"}`}
-                // ^ fades the card while its own delete request is in flight
+              // ^ fades the card while its own delete request is in flight
               >
                 {/* image placeholder, same package-icon stand-in used on the listing page */}
                 <div className="w-14 h-14 shrink-0 bg-[#2E2A25] rounded-md flex items-center justify-center">
-                  {b.productImgUrl ? 
-                  (<img src={b.productImgUrl} alt="product image" />) 
-                  : 
-                  (<Package size={22} className="text-[#4A4638]" />)}
-                  
+                  {b.productImgUrl ? (
+                    <img src={b.productImgUrl} alt="product image" />
+                  ) : (
+                    <Package size={22} className="text-[#4A4638]" />
+                  )}
                 </div>
 
                 {/* clicking the name/price area navigates to the product detail page */}
@@ -107,14 +114,20 @@ export default function BookmarksPage() {
                   <p className="text-sm text-[#F1E9D8] mb-1">{b.name}</p>
                   <div className="flex items-center gap-2">
                     <div className="flex items-center gap-0.5">
-                        <Star
-                          size={12}
-                          className="fill-[#FF6B4A] text-[#FF6B4A]"
-                        />
-                    <span className="text-xs text-[#6E6858]">({b.rating})</span>
+                      <Star
+                        size={12}
+                        className="fill-[#FF6B4A] text-[#FF6B4A]"
+                      />
+                      <span className="text-xs text-[#6E6858]">
+                        ({b.rating})
+                      </span>
                     </div>
-                    <span className="text-xs text-[#6E6858]">({b.reviewCount})</span>
-                    <span className="text-sm text-[#FF6B4A] font-medium ml-2">{b.price}</span>
+                    <span className="text-xs text-[#6E6858]">
+                      ({b.reviewCount})
+                    </span>
+                    <span className="text-sm text-[#FF6B4A] font-medium ml-2">
+                      {b.price}
+                    </span>
                   </div>
                 </button>
 

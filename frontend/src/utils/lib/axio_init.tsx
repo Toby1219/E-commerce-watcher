@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const BASE_URL = "http://127.0.0.1:8181"
+const BASE_URL = import.meta.env.VITE_API_URL ?? ""
 const REFRESH_URL = "/auth/refresh"
 
 export const api = axios.create({

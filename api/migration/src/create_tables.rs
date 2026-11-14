@@ -8,6 +8,11 @@ pub struct Migration;
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let schema = Schema::new(DatabaseBackend::Postgres);
+        manager
+        .get_connection()
+        // raw SQL; IF NOT EXISTS makes re-runs harmless
+        .execute_unprepared("CREATE EXTENSION IF NOT EXISTS vector;")
+        .await?;
         manager.create_table(schema.create_table_from_entity(users::Entity))
         .await?;
         manager.create_table(schema.create_table_from_entity(products::Entity))

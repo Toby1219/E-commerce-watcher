@@ -11,20 +11,20 @@ export default defineConfig({
     babel({ presets: [reactCompilerPreset()] })
   ],
   server: {
-    host: '127.0.0.1', // Or '0.0.0.0' if running in Docker/VM
+    host: 'localhost', // Or '0.0.0.0' if running in Docker/VM
     port: 5173,
     hmr: {
       protocol: 'ws',
-      host: '127.0.0.1',
+      host: 'localhost',
       port: 5173,
     },
     proxy:{
       '/api': {
-        target: 'http://127.0.0.1:8080',
+        target: 'http://localhost:8181',
         changeOrigin: true,
       },
       '/auth': {
-        target: 'http://127.0.0.1:8080',
+        target: 'http://localhost:8181',
         changeOrigin: true,
       },
     }

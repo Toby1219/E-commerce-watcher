@@ -7,8 +7,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
-os.environ["HF_TOKEN"] = "hf_xxxxxxxxxxxxxxxx"
-os.environ["HF_HUB_OFFLINE"] = "1"
+# os.environ["HF_TOKEN"] = "hf_xxxxxxxxxxxxxxxx"
+# os.environ["HF_HUB_OFFLINE"] = "1"
 
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
