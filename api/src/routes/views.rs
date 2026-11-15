@@ -192,7 +192,7 @@ async fn multiple_product(state:web::Data<AppState>, query:web::Query<ProductQue
 
     if total_items == 0 {
         let q = TextPayload::Single(p_n.clone());
-        actix_web::rt::spawn(make_request::<EmbedderApiResponse>(Some(q), "run-scrapy".to_string(), state.env_config.py_api_host.clone(), "post".to_string()));
+        actix_web::rt::spawn(make_request::<EmbedderApiResponse>(Some(q), "run-scrapy".to_string(), state.env_config.py_api_host.clone(), "post".to_string(), 5));
     }
 
     let products_result: ProductResponse = ProductResponse {
@@ -841,7 +841,7 @@ async fn search_product(state:web::Data<AppState>, user:OptionalUser, payload: w
     
     let message = if hits.is_empty() {
         let q = TextPayload::Single(query.clone());
-        actix_web::rt::spawn(make_request::<EmbedderApiResponse>(Some(q), "run-scrapy".to_string(), state.env_config.py_api_host.clone(), "post".to_string()));
+        actix_web::rt::spawn(make_request::<EmbedderApiResponse>(Some(q), "run-scrapy".to_string(), state.env_config.py_api_host.clone(), "post".to_string(), 5));
         format!("No close matches for [ {} ] yet. We're fetching products, check back in a minute.", query)
     }else{
         let _ = state.redis.set(&cached_key, &hits, 120).await;      // cache only real results

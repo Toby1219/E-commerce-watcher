@@ -16,7 +16,8 @@ pub async fn embed_one(text: String, host:String) -> Result<Vec<f32>, ApiError> 
         Some(TextPayload::Single(text)), 
         "text-embedder".to_string(), 
         host, 
-        "post".to_string()
+        "post".to_string(),
+        5
     ).await?;
     match response.data {
         EmbeddingResponseData::Single(v) => Ok(v),
@@ -30,7 +31,8 @@ pub async fn embed_many(texts: Vec<String>, host:String) -> Result<Vec<Vec<f32>>
         Some(TextPayload::Multiple(texts)),
         "text-embedder".to_string(), 
         host, 
-        "post".to_string()
+        "post".to_string(),
+        120
     ).await?;
     match response.data {
         EmbeddingResponseData::Multiple(v) if v.len() == expected_len => Ok(v),

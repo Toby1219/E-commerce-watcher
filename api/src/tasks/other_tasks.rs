@@ -13,7 +13,8 @@ pub fn run_currency_spider(host: String) {
                 None, 
                 "update-currency".to_string(),
                 host.clone(), 
-                "get".to_string()
+                "get".to_string(),
+                5
             ).await {
                 Ok(r) => {
                     log::info!("API response: {:?}", r.status); 

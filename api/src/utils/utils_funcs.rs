@@ -311,10 +311,11 @@ pub async fn make_request<T: DeserializeOwned + std::fmt::Debug>(
     query:Option<TextPayload>, 
     url_path: String, 
     host: String,
-    method: String
+    method: String,
+    timeout: u64
 )->Result<T, ApiError> {
     let client = Client::builder()
-    .timeout(Dura::from_secs(5))
+    .timeout(Dura::from_secs(timeout))
     .build()
     .expect("Failed to create HTTP client");
 
@@ -354,7 +355,7 @@ pub async fn make_request<T: DeserializeOwned + std::fmt::Debug>(
         .json()
         .await
         .map_err(|e| ApiError::ServiceUnavailable(format!("[failed to parse API response json] ERROR: {}", e)))?;
-    log::info!("response {:?}", api_response);
+    log::debug!("response {:?}", api_response);
     Ok(api_response)
 
 }
