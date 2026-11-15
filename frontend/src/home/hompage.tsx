@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bookmark, User, Clock, X, ArrowRight, LogIn, LogOut, PackageSearch } from "lucide-react";
+import { Bookmark, User, Clock, X, ArrowRight, LogIn, LogOut, PackageSearch, CodeXml } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useNavigate } from "react-router-dom";
 
@@ -15,6 +15,7 @@ type SEEDHISTORY={
   phrase:string,
   time:string
 }
+
 
 // ----------------------------------------------------------------------------
 // Main component
@@ -84,6 +85,10 @@ export default function Dashboard() {
       if (resp.status === 200){ navigate("/login"); return}
     })
   }
+  
+  const navigateToDoc = () => {
+    window.open("http://localhost:8181/swagger-ui/index.html", "_blank", "noopener,noreferrer");
+  };
 
   if (loadingHistory){ return <p className="text-sm text-[#8A8272]">Fetching your bookmarks…</p>; };
   // if (errorUser || errorHistory || errorbookmark){ navigate("/login"); return; };
@@ -107,6 +112,18 @@ export default function Dashboard() {
 
           {/* Right: nav actions — history / bookmarks / profile */}
           <nav className="flex items-center gap-1">
+            <button
+              onClick={() => {setActiveNav("doc"); navigateToDoc()}}
+              // ^ clicking sets this tab as active, which drives the underline style below
+              className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors
+                ${activeNav === "doc"
+                  ? "bg-[#2E2A25] text-[#FF6B4A]"   // active state: subtle fill + accent text
+                  : "text-[#B8AF9E] hover:text-[#F1E9D8]"}`}  // inactive: muted, brightens on hover
+            >
+              <CodeXml size={16} className="text-white" />
+              <span>Docs</span>
+            </button>
+
             {/* History tab */}
             <button
               onClick={() => {setActiveNav("search");}}
@@ -119,6 +136,7 @@ export default function Dashboard() {
               <Clock size={16} className="text-white" />
               <span>History</span>
             </button>
+            
             {/* Bookmarks tab, with a small count badge */}
             <button
               onClick={() => {setActiveNav("bookmarks"); navigate("/bookmark")}}

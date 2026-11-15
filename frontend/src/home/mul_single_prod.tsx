@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import {
   Bookmark, User, Home, Star, ArrowLeft,
-  ExternalLink, SlidersHorizontal, RotateCcw, LogInIcon
+  ExternalLink, SlidersHorizontal, RotateCcw, LogInIcon, CodeXml
 } from "lucide-react";
 import { apiRequest } from "../utils/lib/axio_init";
 import type { CurrentUser, Product, Products } from "../utils/store/types";
@@ -74,8 +74,9 @@ function LoadingOverlay() {
 // ----------------------------------------------------------------------------
 // Shared top nav — same as the dashboard, plus a "Shop" tab and a back-aware brand link.
 // ----------------------------------------------------------------------------
-function TopNav({ onHome, onBookmark, onProfile, onLogin, current_user }: 
-  { onHome: () => void, onBookmark: () => void, onProfile: () => void, onLogin: () => void, current_user: CurrentUser | null }) {
+function TopNav({ onHome, onBookmark, onProfile, onLogin, navDoc, current_user }: 
+  { onHome: () => void, onBookmark: () => void, onProfile: () => void, onLogin: () => void, navDoc: () => void, current_user: CurrentUser | null }) {
+
   return (
     <header className="w-full border-b border-[#3A362F] bg-[#1D1B19]">
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -86,6 +87,9 @@ function TopNav({ onHome, onBookmark, onProfile, onLogin, current_user }:
         </button>
 
         <nav className="flex items-center gap-1 text-[#B8AF9E] text-sm">
+          <button className="flex items-center gap-2 px-3 py-2 rounded-md hover:text-[#F1E9D8]" onClick={navDoc}>
+            <CodeXml size={16} /> Docs
+          </button>
           <button className="flex items-center gap-2 px-3 py-2 rounded-md hover:text-[#F1E9D8]" onClick={onHome}>
             <Home size={16} /> Home
           </button>
@@ -350,7 +354,7 @@ function ProductPage({ productId, products, loading, currentUser,  onBack }: {
     apiRequest("post", "/api/user/order", {product_id:productId}).then(
       (resp) => {
         if (resp.status === 200) {
-          console.log(product.originalUrl)
+          // console.log(product.originalUrl)
           // if (resp.data.body.product_url === product.originalUrl) {
           //   window.open(encodeURIComponent(product.originalUrl), "_blank", "noopener,noreferrer");
 
@@ -619,6 +623,10 @@ export default function Products_Page() {
     return () => { cancelled = true; };
   }, [phrase]);
 
+  const navigateToDoc = () => {
+    window.open("http://localhost:8181/swagger-ui/index.html", "_blank", "noopener,noreferrer");
+  };
+  
   useEffect(() => { window.scrollTo(0, 0); }, [selectedProductId]); // top of page on every switch
   
   return (
@@ -628,6 +636,7 @@ export default function Products_Page() {
         onBookmark={() => navigate("/bookmark")} 
         onProfile={() => navigate("/profile")} 
         onLogin={() => navigate("/login")} 
+        navDoc={() => navigateToDoc()}
         current_user={currentUser || null} 
       />
 
