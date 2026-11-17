@@ -239,7 +239,7 @@ function ListingPage({ onSelectProduct, products }:{ onSelectProduct: (id: numbe
           {filteredProducts.length === 0 ? (
             // empty state: shown when the current filter combination matches nothing
             <div className="text-center py-20 text-[#8A8272]">
-              <p className="mb-3">No products match these filters.</p>
+              <p className="mb-3">No products match these filters OR product does not exist yet come back later</p>
               <button
                 onClick={resetFilters}
                 className="text-sm text-[#FF6B4A] hover:underline"
