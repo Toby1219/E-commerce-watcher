@@ -201,7 +201,7 @@ Cached 60 s per identity and IP.
 
 Formulas (rates are units of currency per 1 USD): `OTB = amount / rate(from)`, `OTO = amount × rate(to) / rate(from)`.
 
-Returns `{"amount", "from", "to", "converted"}`. Unknown currency or type → `404`. The `currencies` table must be populated first (`scrapy crawl curency_api`).
+Returns `{"amount", "from", "to", "converted"}`. Unknown currency or type → `404`. The `currencies` table must be populated first (`scrapy crawl currency_api`).
 
 ---
 

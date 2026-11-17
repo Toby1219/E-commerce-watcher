@@ -25,7 +25,7 @@ A product-search backend for e-commerce listings. A **Python/Scrapy** crawler co
 | Scrape trigger (API → FastAPI → Scrapy) | Fires correctly |
 | Automatic FX refresh (24 h worker) | Working |
 | Tests | 23 integration tests |
-| Docker / CI | Not yet |
+| Docker / CI | Working |
 
 ## Tech stack
 
@@ -137,7 +137,7 @@ cargo run                                                   # start the API and 
 
 # 4) Seed data (new terminal) -----------------------------------------------
 cd services/crawlers                                        # back to the Scrapy project
-scrapy crawl curency_api                                    # load FX rates now (spider name is misspelled "curency_api")
+scrapy crawl currency_api                                    # load FX rates now (spider name is misspelled "currency_api")
 python main.py --search "hp laptop"                         # scrape Jumia for a term
 ```
 
@@ -166,3 +166,87 @@ curl "$BASE/api/user/me" -H "Authorization: Bearer $TOKEN"   # call a protected 
 cd api            # Cargo workspace root
 cargo test        # runs api/tests/routes_test.rs
 ```
+## Docker
+Run the whole stack (Postgres + pgvector, Redis, Python service, Rust API) with Docker Compose.
+
+### Requirements
+
+- Docker Engine and the Compose plugin (`docker compose version` should work)
+
+### 1) Create the env files
+```bash
+# copy the API template (create it if missing)
+cp api/.env.example api/.env   
+
+# copy the crawler template
+cp services/crawlers/.env.example services/crawlers/.env  
+
+# copy the root file env for docker use
+cp ./.env.example ./.env
+```
+Inside Compose, services talk to each other by **service name**, not `localhost`:
+
+| File | Variable | Docker value |
+|------|----------|--------------|
+| `api/.env` | `BIND_ADDRESS` | `0.0.0.0` (`127.0.0.1` would be unreachable from your host) |
+| `api/.env` | `DATABASE_URL` | `postgres://<user>:<pass>@<db-service>:5432/e_watchdb` |
+| `api/.env` | `REDIS_URL` | `redis://<redis-service>:6379` |
+| `api/.env` | `PY_API_HOST` | `http://<python-service>:8000` (no trailing slash) |
+| `services/crawlers/.env` | `DB_HOST` | `<db-service>` |
+| `services/crawlers/.env` | `DB_PORT` | `5432` (the container port, not the host-mapped `5433`) |
+| `services/crawlers/.env` | `DB_NAME` | `e_watchdb` (same DB the API uses) |
+| `./.env`| `POSTGRES_USER` | `docker_user` (This should be in the root file for docker) |
+| `./.env`| `POSTGRES_PASSWORD` | `dockeruser001` (This should be in the root file for docker) |
+| `./.env`| `POSTGRES_DB` | `e_watchdb` (This should be in the root file for docker) |
+
+### 2) Build and start
+
+```bash
+# build images and start every service in the background
+docker compose up -d --build   
+
+# check that all services are running/healthy
+docker compose ps              
+
+# follow the Rust API logs (Ctrl+C stops following, not the service)
+docker compose logs -f api     
+```
+
+### 3) Prepare the database (first run only)
+
+```bash
+# enable pgvector; the first migration creates a vector column, so this must run before migrations
+docker compose exec <db-service> psql -U <user> -d e_watchdb -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# load exchange rates so currency conversion works
+docker compose exec -w /app/crawlers <python-service> scrapy crawl currency_api 
+```
+
+### 4) Use it
+
+- Frontend UI: `http://localhost/`
+- Swagger UI: `http://localhost:<PORT_NUMBER>/swagger-ui/index.html`
+- Health check: `curl http://localhost:<PORT_NUMBER>/api/health`
+
+### Common commands
+
+```bash
+ # stop and remove containers (data volumes are kept)
+docker compose down           
+
+# also delete volumes, which wipes the database
+docker compose down -v         
+
+# force a clean rebuild of one image
+docker compose build --no-cache <service>   
+
+ # restart one service after changing its .env
+docker compose restart api    
+```
+
+### Notes
+- **Currency API in crawler:** register an account at [exchangerate-api](https://www.exchangerate-api.com) to get an API key, so Scrapy can fetch currency data successfully. Put the key in your crawler `.env` as `CURENCY_API_URL=https://v6.exchangerate-api.com/v6/<API_KEY>/latest/USD`.  
+- **Embedding model:** `api.py` forces offline mode, so `BAAI/bge-base-en-v1.5` must already be inside the Python image (or mounted as a volume). The first build is large and slow because of PyTorch and the model download.
+- **Data persistence:** Postgres data lives in a named volume, so `docker compose down` keeps it and `down -v` deletes it.
+- **Secrets:** never commit `.env` files. Only commit the `.env.example` templates.
+- **Ports:** change the host side of a mapping (`"8181:8181"`) if the port is taken on your machine.

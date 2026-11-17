@@ -6,6 +6,7 @@ use utoipa::OpenApi;
 use utoipa_actix_web::AppExt; 
 use utoipa_swagger_ui::SwaggerUi; 
 
+use migration::{Migrator, MigratorTrait};
 use api::{middleware::redis_cache::CacheReqResp, schemas::{others::ApiDoc, response_sch::ApiResponse}};
 use api::utils::db::connect_db;
 use api::middleware::limiter::RoutesLimiter;
@@ -32,6 +33,12 @@ async fn main()-> std::io::Result<()>{
 
     let db_conn:DatabaseConnection  = connect_db(&config_envapp.db_url).await;
     let redis_conn: CacheReqResp = CacheReqResp::connect(&config_envapp.redis_url).await.expect("failed to connect to Redis");
+    
+    log::info!("running migrations...");              
+    Migrator::up(&db_conn, None)                      
+        .await                                        
+        .expect("migration failed");                   
+    log::info!("migrations complete"); 
     
     let state = web::Data::new(AppState {
         db: db_conn,

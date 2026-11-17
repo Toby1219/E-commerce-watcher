@@ -50,7 +50,7 @@ uvicorn api:app --port 8000                                                     
 - `recently scraped <term>`: the same term ran in the last hour (cooldown 3600 s).
 - `already runnig` (sic): the term is currently being scraped.
 
-`/update-currency` starts the `curency_api` spider in the background (or answers `recently scraped currency`). The Rust API calls it every 24 hours.
+`/update-currency` starts the `currency_api` spider in the background (or answers `recently scraped currency`). The Rust API calls it every 24 hours.
 
 Limits: at most 2 scrapes at once (shared by products and currency), each killed after 3000 s. Cooldown and in-flight state live in process memory and reset on restart. The embedding model is `BAAI/bge-base-en-v1.5`, run in a worker thread so the event loop isn't blocked.
 
@@ -62,12 +62,12 @@ Run any spider from `services/crawlers`.
 | Spider (`scrapy crawl <name>`) | File | What it does | Writes to |
 |---|---|---|---|
 | `crawl001` | `spiders/spider001.py` | Jumia Nigeria. Requests search pages **1–4** for `search_key`, keeps listings whose name contains every search word, then scrapes each product page: price, summary, spec tables, features, reviews, brand, category, SKU, image | `products` via `TortoiseDBPipeline` |
-| `curency_api` | `spiders/curency_api.py` | Fetches USD-based exchange rates from the URL in `CURRENCY_API_URL`, one item per currency | `currencies` via `CurrencyItemsPipeline` |
+| `currency_api` | `spiders/currency_api.py` | Fetches USD-based exchange rates from the URL in `CURRENCY_API_URL`, one item per currency | `currencies` via `CurrencyItemsPipeline` |
 | `spider002` | `spiders/spider002.py` | Experiment: opens ebay.com with Playwright, searches, and yields the result count. Needs Chrome at `/usr/bin/google-chrome` and runs non-headless | nothing (no pipeline) |
 
 ```bash
 python main.py --search "hp laptop"   # run the Jumia spider for a term (--search is required)
-scrapy crawl curency_api              # refresh exchange rates
+scrapy crawl currency_api              # refresh exchange rates
 ```
 
 `crawl001` can't be started with a bare `scrapy crawl` because its constructor requires `search_key`; use `main.py`, or `scrapy crawl crawl001 -a search_key="hp laptop"`.
@@ -94,3 +94,6 @@ Tortoise models `Product` (table `products`) and `Currencies` (table `currencies
 | AutoThrottle | enabled; start delay 5 s, max 60 s, target concurrency 3 |
 | HTTP cache | enabled, filesystem, 200 s expiry, dir `httpcache` |
 | Reactor | asyncio |
+
+### NOTE
+- **Currency API in crawler:** register an account at [exchangerate-api](https://www.exchangerate-api.com) to get an API key, so Scrapy can fetch currency data successfully. Put the key in your crawler `.env` as `CURENCY_API_URL=https://v6.exchangerate-api.com/v6/<API_KEY>/latest/USD`.   
